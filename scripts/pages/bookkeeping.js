@@ -1,0 +1,867 @@
+/* ============================================
+   月度记账本 — 逻辑层（vanilla JS，无框架）
+   本地 localStorage + 可选 Supabase 多人共享
+   预算口径：预算总额=收入；预算支出=储蓄+开支(计划)；已支出=勾选完成的开支+储蓄；还剩=预算总额-预算支出
+   ============================================ */
+(function () {
+  'use strict';
+
+  var BOOK_ID_KEY = 'bookkeeping_book_id';
+  var POLL_FALLBACK_MS = 60000;
+  var SYNC_LABELS = {
+    '': '',
+    ok: '已同步',
+    syncing: '同步中…',
+    err: '同步失败',
+    live: '实时同步'
+  };
+
+  /* ---------- 工具 ---------- */
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+  function newBookId() {
+    return 'bk_' + Math.random().toString(36).slice(2, 10);
+  }
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+  function monthKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function num(v) {
+    var n = parseFloat(v);
+    return isNaN(n) || n < 0 ? 0 : n;
+  }
+  function fmt(n) {
+    n = Math.round((n + Number.EPSILON) * 100) / 100;
+    var s = (Math.abs(n) % 1 === 0) ? n.toFixed(0) : n.toFixed(2);
+    return '¥' + s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  function $(id) { return document.getElementById(id); }
+
+  var toastTimer = null;
+  function showToast(msg, ms) {
+    var el = $('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      el.classList.remove('show');
+    }, ms || 2400);
+  }
+
+  function getConfig() {
+    return window.BOOKKEEPING_CONFIG || {};
+  }
+  function cloudEnabled() {
+    var c = getConfig();
+    return !!(c.supabaseUrl && c.supabaseAnonKey);
+  }
+  function supabaseHeaders(extra) {
+    var c = getConfig();
+    var h = {
+      apikey: c.supabaseAnonKey,
+      Authorization: 'Bearer ' + c.supabaseAnonKey,
+      'Content-Type': 'application/json'
+    };
+    if (extra) {
+      Object.keys(extra).forEach(function (k) { h[k] = extra[k]; });
+    }
+    return h;
+  }
+
+  var STORAGE_PREFIX = 'bookkeeping_data_v1';
+  var SYNC_PREFIX = 'bookkeeping_sync_at';
+
+  function dataStorageKey(bookId) {
+    return STORAGE_PREFIX + '_' + (bookId || '_none');
+  }
+  function syncStorageKey(bookId) {
+    return SYNC_PREFIX + '_' + (bookId || '_none');
+  }
+
+  /* ---------- 数据层 ---------- */
+  function emptyMonth() {
+    return { income: [], savings: [], expenses: [] };
+  }
+  function emptyData() {
+    return { budgetByMonth: {}, months: {} };
+  }
+  function migrateLegacyData(bookId) {
+    var newKey = dataStorageKey(bookId);
+    if (localStorage.getItem(newKey)) return;
+    var legacy = localStorage.getItem(STORAGE_PREFIX);
+    if (legacy) localStorage.setItem(newKey, legacy);
+  }
+
+  function loadLocal(bookId) {
+    bookId = bookId || state.bookId;
+    if (!bookId) return emptyData();
+    migrateLegacyData(bookId);
+    try {
+      var raw = localStorage.getItem(dataStorageKey(bookId));
+      if (!raw) return emptyData();
+      var data = JSON.parse(raw);
+      if (!data.budgetByMonth) data.budgetByMonth = {};
+      if (!data.months) data.months = {};
+      return data;
+    } catch (e) {
+      return emptyData();
+    }
+  }
+  function saveLocal() {
+    if (!state.bookId) return;
+    try {
+      localStorage.setItem(dataStorageKey(state.bookId), JSON.stringify(state.data));
+    } catch (e) {
+      showToast('保存失败：浏览器存储空间不足或被禁用');
+    }
+  }
+  function getMonth(key) {
+    if (!state.data.months[key]) state.data.months[key] = emptyMonth();
+    return state.data.months[key];
+  }
+
+  /* ---------- 云端同步 ---------- */
+  function showSyncError(msg) {
+    state.syncFailed = true;
+    var bar = $('syncError');
+    var msgEl = $('syncErrorMsg');
+    if (bar) bar.hidden = false;
+    if (msgEl && msg) msgEl.textContent = msg;
+    setSyncStatus('err');
+  }
+  function hideSyncError() {
+    state.syncFailed = false;
+    var bar = $('syncError');
+    if (bar) bar.hidden = true;
+  }
+
+  function parseCloudError(res) {
+    return res.text().then(function (t) {
+      try {
+        var j = JSON.parse(t);
+        return j.message || t || ('HTTP ' + res.status);
+      } catch (e) {
+        return t || ('HTTP ' + res.status);
+      }
+    });
+  }
+
+  function setSyncStatus(status, label) {
+    var dot = $('syncDot');
+    var text = $('syncStatusText');
+    if (dot) dot.className = 'sync-dot' + (status ? ' ' + status : '');
+    if (text) text.textContent = label != null ? label : (SYNC_LABELS[status] || '');
+  }
+
+  function cloudFetch(bookId) {
+    var c = getConfig();
+    var url = c.supabaseUrl + '/rest/v1/ledgers?id=eq.' + encodeURIComponent(bookId) +
+      '&select=data,updated_at';
+    return fetch(url, { headers: supabaseHeaders() })
+      .then(function (res) {
+        if (!res.ok) {
+          return parseCloudError(res).then(function (msg) { throw new Error(msg); });
+        }
+        return res.json();
+      })
+      .then(function (rows) {
+        return rows.length ? rows[0] : null;
+      });
+  }
+
+  function cloudPush(bookId, data) {
+    var c = getConfig();
+    var updated_at = new Date().toISOString();
+    return fetch(c.supabaseUrl + '/rest/v1/ledgers?on_conflict=id', {
+      method: 'POST',
+      headers: supabaseHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ id: bookId, data: data, updated_at: updated_at })
+    }).then(function (res) {
+      if (!res.ok) {
+        return parseCloudError(res).then(function (msg) { throw new Error(msg); });
+      }
+      localStorage.setItem(syncStorageKey(bookId), updated_at);
+      hideSyncError();
+      return updated_at;
+    });
+  }
+
+  function applyCloudRow(row, force) {
+    if (!row || !row.data) return false;
+    var localAt = localStorage.getItem(syncStorageKey(state.bookId)) || '';
+    if (force || !localAt || row.updated_at > localAt) {
+      state.data = row.data;
+      if (!state.data.budgetByMonth) state.data.budgetByMonth = {};
+      if (!state.data.months) state.data.months = {};
+      saveLocal();
+      localStorage.setItem(syncStorageKey(state.bookId), row.updated_at);
+      hideSyncError();
+      return true;
+    }
+    return false;
+  }
+
+  function pullFromCloud(silent, force) {
+    if (!cloudEnabled() || !state.bookId) return Promise.resolve(false);
+    if (!silent) setSyncStatus('syncing');
+    return cloudFetch(state.bookId)
+      .then(function (row) {
+        if (!row) {
+          return cloudPush(state.bookId, state.data).then(function () {
+            setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+            return false;
+          });
+        }
+        var changed = applyCloudRow(row, force);
+        setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+        return changed;
+      })
+      .catch(function (err) {
+        setSyncStatus('err');
+        var msg = (err && err.message) ? err.message : '';
+        if (msg.indexOf('ledgers') !== -1 || msg.indexOf('PGRST') !== -1) {
+          showSyncError('云端同步失败：Supabase 数据库表未创建，家人无法看到数据。请联系管理员建表。');
+        } else {
+          showSyncError('云端同步失败：' + msg + '。家人可能看不到最新数据。');
+        }
+        return false;
+      });
+  }
+
+  var pollTimer = null;
+  var supabaseClient = null;
+  var realtimeChannel = null;
+  var visibilityBound = false;
+
+  function getSupabaseClient() {
+    if (!window.supabase || !window.supabase.createClient) return null;
+    var c = getConfig();
+    if (!supabaseClient) {
+      supabaseClient = window.supabase.createClient(c.supabaseUrl, c.supabaseAnonKey);
+    }
+    return supabaseClient;
+  }
+
+  function stopRealtime() {
+    state.realtimeReady = false;
+    if (realtimeChannel && supabaseClient) {
+      supabaseClient.removeChannel(realtimeChannel);
+      realtimeChannel = null;
+    }
+  }
+
+  function startRealtime() {
+    stopRealtime();
+    if (!cloudEnabled() || !state.bookId) return;
+    var client = getSupabaseClient();
+    if (!client) return;
+
+    realtimeChannel = client
+      .channel('ledger-' + state.bookId)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ledgers',
+          filter: 'id=eq.' + state.bookId
+        },
+        function (payload) {
+          var row = payload.new;
+          if (!row || !row.data) return;
+          var changed = applyCloudRow(row, false);
+          if (changed) render();
+          setSyncStatus('live');
+        }
+      )
+      .subscribe(function (status) {
+        if (status === 'SUBSCRIBED') {
+          state.realtimeReady = true;
+          setSyncStatus('live');
+        }
+      });
+  }
+
+  function stopCloudSync() {
+    stopRealtime();
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function startCloudSync() {
+    stopCloudSync();
+    if (!cloudEnabled() || !state.bookId) return;
+    startRealtime();
+    pollTimer = setInterval(function () {
+      pullFromCloud(true).then(function (changed) {
+        if (changed) render();
+      });
+    }, POLL_FALLBACK_MS);
+    if (!visibilityBound) {
+      visibilityBound = true;
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible' && state.bookId) {
+          pullFromCloud(true).then(function (changed) {
+            if (changed) render();
+          });
+        }
+      });
+    }
+  }
+
+  function retrySync() {
+    if (!cloudEnabled() || !state.bookId) return;
+    hideSyncError();
+    setSyncStatus('syncing');
+    cloudPush(state.bookId, state.data)
+      .then(function () {
+        setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+        showToast('同步成功');
+        startRealtime();
+      })
+      .catch(function () {
+        pullFromCloud(false, false).then(function (changed) {
+          if (changed) render();
+          if (!state.syncFailed) {
+            setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+            showToast('同步成功');
+            startRealtime();
+          }
+        });
+      });
+  }
+
+  function save() {
+    saveLocal();
+    if (cloudEnabled() && state.bookId) {
+      setSyncStatus('syncing');
+      cloudPush(state.bookId, state.data)
+        .then(function () { setSyncStatus(state.realtimeReady ? 'live' : 'ok'); })
+        .catch(function () {
+          setSyncStatus('err');
+          showSyncError('保存到云端失败，家人可能看不到最新数据。');
+        });
+    }
+  }
+
+  /* ---------- 账本 ID ---------- */
+  function normalizeBookId(raw) {
+    return (raw || '').trim().toLowerCase();
+  }
+  function isValidBookId(id) {
+    return /^[a-z0-9_-]{4,32}$/.test(id);
+  }
+  function resolveBookIdFromUrl() {
+    var m = /[?&]book=([^&]+)/.exec(window.location.search);
+    return m ? normalizeBookId(decodeURIComponent(m[1])) : '';
+  }
+  function getPublicEntry() {
+    var host = window.location.hostname;
+    if (host.indexOf('jsdelivr.net') !== -1) {
+      return 'https://cdn.jsdelivr.net/gh/danainiu56-bot/family-ledger@bookkeeping/';
+    }
+    if (host.indexOf('github.io') !== -1) {
+      return window.location.origin + '/family-ledger/book/';
+    }
+    var p = window.location.pathname;
+    if (p.indexOf('/book') !== -1) {
+      return window.location.origin + p.replace(/\/[^/]*$/, '/').replace(/\/?$/, '/');
+    }
+    return window.location.origin + '/family-ledger/book/';
+  }
+  function getShareLink() {
+    return getPublicEntry() + '?book=' + encodeURIComponent(state.bookId);
+  }
+  function getShareMessage() {
+    var key = monthKey(state.current);
+    var parts = key.split('-');
+    var label = parts[0] + '年' + parseInt(parts[1], 10) + '月';
+    return label + '家庭记账本，点开一起看：' + getShareLink();
+  }
+  function updateBookBar() {
+    var bar = $('bookBar');
+    if (!cloudEnabled()) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+    $('bookIdDisplay').textContent = state.bookId || '未加入';
+  }
+
+  function setBookId(id) {
+    state.bookId = normalizeBookId(id);
+    localStorage.setItem(BOOK_ID_KEY, state.bookId);
+    state.data = loadLocal(state.bookId);
+    updateBookBar();
+    var url = new URL(window.location.href);
+    url.searchParams.set('book', state.bookId);
+    window.history.replaceState({}, '', url.pathname + url.search);
+  }
+
+  function openBookSetup(force) {
+    $('fBookId').value = state.bookId || '';
+    $('bookMask').hidden = false;
+    $('bookDrawer').hidden = false;
+    $('bookDrawer').dataset.force = force ? '1' : '';
+    setTimeout(function () { $('fBookId').focus(); }, 280);
+  }
+  function closeBookSetup() {
+    if ($('bookDrawer').dataset.force === '1' && !state.bookId) return;
+    $('bookMask').hidden = true;
+    $('bookDrawer').hidden = true;
+  }
+
+  function joinBook(id) {
+    id = normalizeBookId(id);
+    if (!isValidBookId(id)) {
+      showToast('账本编号格式不正确');
+      return Promise.resolve(false);
+    }
+    stopCloudSync();
+    setBookId(id);
+    return pullFromCloud(false, true).then(function (changed) {
+      closeBookSetup();
+      render();
+      startCloudSync();
+      return true;
+    });
+  }
+
+  function copyText(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function showShareDrawerContent() {
+    $('shareLinkText').value = getShareMessage();
+    $('shareBookIdText').value = state.bookId;
+    $('shareMask').hidden = false;
+    $('shareDrawer').hidden = false;
+    setTimeout(function () {
+      var el = $('shareLinkText');
+      el.focus();
+      el.select();
+    }, 280);
+  }
+
+  function openShareDrawer() {
+    if (!state.bookId) {
+      showToast('请先创建或加入账本');
+      return;
+    }
+    if (!cloudEnabled()) {
+      showToast('未配置云端，无法分享给家人');
+      return;
+    }
+    setSyncStatus('syncing');
+    cloudPush(state.bookId, state.data).then(function () {
+      setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+      showShareDrawerContent();
+    }).catch(function (err) {
+      setSyncStatus('err');
+      var msg = (err && err.message) ? err.message : '';
+      if (msg.indexOf('ledgers') !== -1 || msg.indexOf('PGRST') !== -1) {
+        showSyncError('云端表未创建，家人无法看到数据。');
+        showToast('请先在 Supabase 创建 ledgers 表');
+      } else {
+        showSyncError('保存到云端失败：' + msg);
+        showToast('保存失败，请点重试或稍后再分享');
+      }
+    });
+  }
+
+  function closeShareDrawer() {
+    $('shareMask').hidden = true;
+    $('shareDrawer').hidden = true;
+  }
+
+  function doCopyShare() {
+    var text = $('shareLinkText').value;
+    if (!text) return;
+    if (copyText(text)) {
+      showToast('已复制，去微信粘贴发给家人吧');
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        showToast('已复制，去微信粘贴发给家人吧');
+      }).catch(function () {
+        $('shareLinkText').focus();
+        $('shareLinkText').select();
+        showToast('请长按上方文案框，选择「复制」');
+      });
+      return;
+    }
+    $('shareLinkText').focus();
+    $('shareLinkText').select();
+    showToast('请长按上方文案框，选择「复制」');
+  }
+
+  /* ---------- 全局状态 ---------- */
+  var state = {
+    data: emptyData(),
+    current: new Date(),
+    editing: null,
+    bookId: '',
+    syncFailed: false,
+    realtimeReady: false
+  };
+
+  /* ---------- 计算 ---------- */
+  function sum(list, field) {
+    var t = 0;
+    for (var i = 0; i < list.length; i++) t += num(list[i][field]);
+    return t;
+  }
+  function completedExpenseTotal(expenses) {
+    var t = 0;
+    for (var i = 0; i < expenses.length; i++) {
+      if (!expenses[i].done) continue;
+      var amt = expenses[i].actualAmount;
+      if (amt === '' || amt == null) amt = expenses[i].plannedAmount;
+      t += num(amt);
+    }
+    return t;
+  }
+  function calcActualSpent(m) {
+    return sum(m.savings, 'amount') + completedExpenseTotal(m.expenses);
+  }
+  function syncBudgetFromIncome(key) {
+    var m = getMonth(key);
+    state.data.budgetByMonth[key] = sum(m.income, 'amount');
+  }
+
+  /* ---------- 渲染 ---------- */
+  function render() {
+    var key = monthKey(state.current);
+    var m = getMonth(key);
+    $('monthLabel').textContent = key;
+
+    var incomeT = sum(m.income, 'amount');
+    var savingT = sum(m.savings, 'amount');
+    var plannedT = sum(m.expenses, 'plannedAmount');
+    var expenseDone = completedExpenseTotal(m.expenses);
+    var budget = num(state.data.budgetByMonth[key]);
+    var budgetOut = savingT + plannedT;
+    var actualSpent = calcActualSpent(m);
+    var remain = budget - budgetOut;
+
+    $('budgetValue').textContent = budget ? fmt(budget) : '¥0';
+    $('budgetOutValue').textContent = fmt(budgetOut);
+    $('actualSpentValue').textContent = fmt(actualSpent);
+    $('remainValue').textContent = fmt(remain);
+    $('remainValue').style.color = remain < 0 ? '#fecaca' : '#fff';
+
+    var pct = budget > 0 ? Math.min(100, (budgetOut / budget) * 100) : 0;
+    var fill = $('progressFill');
+    fill.style.width = pct + '%';
+    fill.classList.toggle('over', budget > 0 && budgetOut > budget);
+
+    $('incomeTotal').textContent = fmt(incomeT);
+    $('savingTotal').textContent = fmt(savingT);
+    $('plannedTotal').textContent = fmt(plannedT);
+    $('incomeSum').textContent = fmt(incomeT);
+    $('savingSum').textContent = fmt(savingT);
+    var expenseRemain = plannedT - expenseDone;
+    $('expenseSum').textContent =
+      '已花 ' + fmt(expenseDone) + ' / 计划 ' + fmt(plannedT) + ' / 还剩 ' + fmt(expenseRemain);
+
+    renderSimpleList($('incomeList'), m.income, 'income');
+    renderSimpleList($('savingList'), m.savings, 'savings');
+    renderExpenseList($('expenseList'), m.expenses);
+    updateBookBar();
+  }
+
+  function renderSimpleList(ul, list, type) {
+    ul.innerHTML = '';
+    var cls = type === 'income' ? 'income' : 'saving';
+    list.forEach(function (item) {
+      var li = document.createElement('li');
+      li.className = 'row';
+      li.innerHTML =
+        '<div class="row-main">' +
+        '<div class="row-name"></div>' +
+        '<div class="row-meta"></div>' +
+        '</div>' +
+        '<div class="row-amount ' + cls + '"></div>';
+      li.querySelector('.row-name').textContent = item.name;
+      li.querySelector('.row-meta').textContent = item.date || '';
+      li.querySelector('.row-amount').textContent = fmt(num(item.amount));
+      li.addEventListener('click', function () { openEntry(type, item.id); });
+      ul.appendChild(li);
+    });
+  }
+
+  function renderExpenseList(ul, list) {
+    ul.innerHTML = '';
+    list.forEach(function (item) {
+      var li = document.createElement('li');
+      li.className = 'row';
+
+      var check = document.createElement('div');
+      check.className = 'row-check' + (item.done ? ' done' : '');
+      check.innerHTML = item.done ? '&#10003;' : '';
+      check.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleDone(item.id);
+      });
+
+      var main = document.createElement('div');
+      main.className = 'row-main';
+      var name = document.createElement('div');
+      name.className = 'row-name' + (item.done ? ' done' : '');
+      name.textContent = item.name;
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      meta.textContent = (item.date || '') + (item.done ? ' · 已完成' : ' · 待支出');
+      main.appendChild(name);
+      main.appendChild(meta);
+
+      var amount = document.createElement('div');
+      amount.className = 'row-amount';
+      if (item.done) {
+        amount.innerHTML = fmt(num(item.actualAmount)) +
+          '<span class="sub">计划 ' + fmt(num(item.plannedAmount)) + '</span>';
+      } else {
+        amount.innerHTML = '<span class="pending">计划 ' + fmt(num(item.plannedAmount)) + '</span>';
+      }
+
+      li.appendChild(check);
+      li.appendChild(main);
+      li.appendChild(amount);
+      li.addEventListener('click', function () { openEntry('expenses', item.id); });
+      ul.appendChild(li);
+    });
+  }
+
+  /* ---------- 明细 CRUD ---------- */
+  function findItem(type, id) {
+    var list = getMonth(monthKey(state.current))[type];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  function toggleDone(id) {
+    var item = findItem('expenses', id);
+    if (!item) return;
+    item.done = !item.done;
+    if (item.done && (item.actualAmount === '' || item.actualAmount == null)) {
+      item.actualAmount = item.plannedAmount;
+    }
+    save();
+    render();
+  }
+
+  /* ---------- 明细抽屉 ---------- */
+  function openEntry(type, id) {
+    state.editing = { type: type, id: id || null };
+    var isExpense = type === 'expenses';
+    var titleMap = { income: '收入', savings: '储蓄', expenses: '开支' };
+
+    document.querySelectorAll('[data-mode="single"]').forEach(function (el) {
+      el.hidden = isExpense;
+    });
+    document.querySelector('[data-mode="expense"]').hidden = !isExpense;
+
+    $('drawerTitle').textContent = (id ? '编辑' : '添加') + titleMap[type];
+    $('deleteBtn').hidden = !id;
+
+    var item = id ? findItem(type, id) : null;
+    $('fName').value = item ? item.name : '';
+    $('fDate').value = item ? (item.date || todayISO()) : todayISO();
+
+    if (isExpense) {
+      $('fPlanned').value = item ? item.plannedAmount : '';
+      $('fDone').checked = item ? !!item.done : false;
+      $('fActual').value = item ? (item.actualAmount || '') : '';
+      syncActualVisibility();
+    } else {
+      $('fAmount').value = item ? item.amount : '';
+    }
+
+    showDrawer('drawer', 'drawerMask');
+    setTimeout(function () { $('fName').focus(); }, 280);
+  }
+
+  function syncActualVisibility() {
+    $('actualWrap').style.display = $('fDone').checked ? 'flex' : 'none';
+    if ($('fDone').checked && !$('fActual').value) {
+      $('fActual').value = $('fPlanned').value;
+    }
+  }
+
+  function submitEntry(e) {
+    e.preventDefault();
+    var ed = state.editing;
+    if (!ed) return;
+    var name = $('fName').value.trim();
+    if (!name) { $('fName').focus(); return; }
+    var date = $('fDate').value || todayISO();
+    var list = getMonth(monthKey(state.current))[ed.type];
+    var item = ed.id ? findItem(ed.type, ed.id) : null;
+
+    if (ed.type === 'expenses') {
+      var planned = num($('fPlanned').value);
+      var done = $('fDone').checked;
+      var actual = done ? num($('fActual').value || $('fPlanned').value) : '';
+      if (item) {
+        item.name = name; item.date = date;
+        item.plannedAmount = planned; item.done = done; item.actualAmount = actual;
+      } else {
+        list.push({ id: uid(), name: name, plannedAmount: planned, actualAmount: actual, done: done, date: date });
+      }
+    } else {
+      var amount = num($('fAmount').value);
+      if (item) {
+        item.name = name; item.date = date; item.amount = amount;
+      } else {
+        list.push({ id: uid(), name: name, amount: amount, date: date });
+      }
+    }
+    if (ed.type === 'income') {
+      syncBudgetFromIncome(monthKey(state.current));
+    }
+    save();
+    render();
+    closeDrawers();
+  }
+
+  function deleteEntry() {
+    var ed = state.editing;
+    if (!ed || !ed.id) return;
+    if (!confirm('确定删除这条记录？')) return;
+    var list = getMonth(monthKey(state.current))[ed.type];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === ed.id) { list.splice(i, 1); break; }
+    }
+    if (ed.type === 'income') {
+      syncBudgetFromIncome(monthKey(state.current));
+    }
+    save();
+    render();
+    closeDrawers();
+  }
+
+  /* ---------- 预算抽屉 ---------- */
+  function openBudget() {
+    var key = monthKey(state.current);
+    $('fBudget').value = state.data.budgetByMonth[key] || '';
+    showDrawer('budgetDrawer', 'budgetMask');
+    setTimeout(function () { $('fBudget').focus(); }, 280);
+  }
+  function submitBudget(e) {
+    e.preventDefault();
+    var key = monthKey(state.current);
+    state.data.budgetByMonth[key] = num($('fBudget').value);
+    save();
+    render();
+    closeDrawers();
+  }
+
+  /* ---------- 抽屉显隐 ---------- */
+  function showDrawer(drawerId, maskId) {
+    $(maskId).hidden = false;
+    $(drawerId).hidden = false;
+  }
+  function closeDrawers() {
+    ['drawer', 'drawerMask', 'budgetDrawer', 'budgetMask'].forEach(function (id) {
+      $(id).hidden = true;
+    });
+    state.editing = null;
+  }
+
+  /* ---------- 事件绑定 ---------- */
+  function bind() {
+    $('prevMonth').addEventListener('click', function () {
+      state.current.setMonth(state.current.getMonth() - 1);
+      render();
+    });
+    $('nextMonth').addEventListener('click', function () {
+      state.current.setMonth(state.current.getMonth() + 1);
+      render();
+    });
+    $('monthLabel').addEventListener('click', function () {
+      var input = prompt('跳转到月份（格式 YYYY-MM）', monthKey(state.current));
+      if (!input) return;
+      var match = /^(\d{4})-(\d{1,2})$/.exec(input.trim());
+      if (!match) { showToast('格式应为 YYYY-MM'); return; }
+      var mm = parseInt(match[2], 10);
+      if (mm < 1 || mm > 12) { showToast('月份应在 1-12 之间'); return; }
+      state.current = new Date(parseInt(match[1], 10), mm - 1, 1);
+      render();
+    });
+
+    document.querySelectorAll('[data-add]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        openEntry(btn.getAttribute('data-add'), null);
+      });
+    });
+
+    $('editBudgetBtn').addEventListener('click', openBudget);
+
+    $('entryForm').addEventListener('submit', submitEntry);
+    $('cancelBtn').addEventListener('click', closeDrawers);
+    $('deleteBtn').addEventListener('click', deleteEntry);
+    $('fDone').addEventListener('change', syncActualVisibility);
+
+    $('budgetForm').addEventListener('submit', submitBudget);
+    $('budgetCancelBtn').addEventListener('click', closeDrawers);
+
+    $('drawerMask').addEventListener('click', closeDrawers);
+    $('budgetMask').addEventListener('click', closeDrawers);
+
+    $('syncRetryBtn').addEventListener('click', retrySync);
+    $('shareBookBtn').addEventListener('click', openShareDrawer);
+    $('copyShareBtn').addEventListener('click', doCopyShare);
+    $('closeShareBtn').addEventListener('click', closeShareDrawer);
+    $('shareMask').addEventListener('click', closeShareDrawer);
+    $('switchBookBtn').addEventListener('click', function () { openBookSetup(false); });
+    $('createBookBtn').addEventListener('click', function () {
+      joinBook(newBookId());
+    });
+    $('bookForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      joinBook($('fBookId').value);
+    });
+    $('bookMask').addEventListener('click', closeBookSetup);
+  }
+
+  /* ---------- 启动 ---------- */
+  function init() {
+    bind();
+
+    var urlBook = resolveBookIdFromUrl();
+    var savedBook = normalizeBookId(localStorage.getItem(BOOK_ID_KEY));
+    state.bookId = urlBook || savedBook;
+    if (state.bookId) {
+      setBookId(state.bookId);
+      pullFromCloud(false, !!urlBook).then(function () {
+        render();
+        startCloudSync();
+      });
+    } else if (cloudEnabled()) {
+      joinBook(newBookId()).then(function () {
+        showToast('已创建家庭账本，开始记账吧');
+      });
+    } else {
+      render();
+    }
+  }
+
+  init();
+})();

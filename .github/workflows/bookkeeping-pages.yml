@@ -1,0 +1,65 @@
+name: Deploy Bookkeeping App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'book/**'
+      - 'book.html'
+      - 'index.html'
+      - '记账本.html'
+      - 'styles/pages/bookkeeping.css'
+      - 'scripts/pages/bookkeeping*.js'
+      - 'scripts/build-bookkeeping-standalone.cjs'
+      - '.github/workflows/bookkeeping-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: bookkeeping-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build standalone HTML
+        run: node scripts/build-bookkeeping-standalone.cjs
+
+      - name: Build static site
+        run: |
+          mkdir -p _site/book
+          cp dist/book-standalone.html _site/index.html
+          cp dist/book-standalone.html _site/book/index.html
+          printf '%s\n' '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="0;url=book/"><script>location.replace("book/"+location.search+location.hash)</script></head><body><a href="book/">进入记账本</a></body></html>' > _site/记账本.html
+          touch _site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Push bookkeeping branch (jsDelivr 轻量镜像)
+        run: |
+          mkdir bookkeeping_only
+          cp dist/book-standalone.html bookkeeping_only/index.html
+          touch bookkeeping_only/.nojekyll
+          cd bookkeeping_only
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b bookkeeping
+          git add index.html .nojekyll
+          git commit -q -m "deploy bookkeeping standalone"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" bookkeeping

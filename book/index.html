@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="format-detection" content="telephone=no,email=no,address=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="x5-orientation" content="portrait">
+  <meta name="x5-fullscreen" content="true">
+  <meta name="x5-page-mode" content="app">
+  <title>月度记账本</title>
+  <style>
+/* ============================================
+   月度记账本 — 移动端 H5（微信内打开）
+   独立样式，不依赖主原型
+   ============================================ */
+
+:root {
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --income: #10b981;
+  --saving: #3b82f6;
+  --expense: #f59e0b;
+  --bg: #f1f5f9;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --text-light: #94a3b8;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 -8px 30px rgba(0,0,0,0.12);
+  --radius: 14px;
+  --radius-sm: 10px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+[hidden] { display: none !important; }
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input { font-family: inherit; }
+
+.app {
+  max-width: 560px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+/* ---------- 顶部月份切换 ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: calc(env(safe-area-inset-top) + 12px) 16px 12px;
+  background: var(--primary);
+  color: #fff;
+}
+.month-nav {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+}
+.month-nav:active { background: rgba(255,255,255,.2); }
+.month-label {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  min-width: 130px;
+  height: 40px;
+  border-radius: 20px;
+  letter-spacing: .5px;
+}
+.month-label:active { background: rgba(255,255,255,.15); }
+
+/* ---------- 共享账本栏 ---------- */
+.book-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 16px;
+  background: #eef2ff;
+  border-bottom: 1px solid #c7d2fe;
+  font-size: 13px;
+}
+.book-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.book-label { color: var(--text-muted); flex-shrink: 0; }
+.book-id {
+  font-weight: 700;
+  color: var(--primary-dark);
+  font-family: ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.book-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.sync-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 72px;
+}
+.sync-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.book-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
+.book-btn:active { background: #f1f5f9; }
+.sync-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-light);
+  flex-shrink: 0;
+}
+.sync-dot.ok,
+.sync-dot.live { background: var(--success); }
+.sync-dot.syncing { background: var(--warning); animation: pulse 1s infinite; }
+.sync-dot.err { background: var(--danger); }
+@keyframes pulse { 50% { opacity: .4; } }
+
+.sync-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sync-error-msg { flex: 1; min-width: 0; }
+.sync-retry-btn {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: #fff;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #fecaca;
+}
+.sync-retry-btn:active { background: #fef2f2; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 28px);
+  transform: translateX(-50%) translateY(120%);
+  max-width: calc(100% - 32px);
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.92);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+  z-index: 200;
+  pointer-events: none;
+  opacity: 0;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.drawer-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: -8px 0 4px;
+}
+.drawer-actions-stack { flex-direction: column; }
+.drawer-actions-stack .btn { flex: none; width: 100%; }
+
+/* ---------- 内容区 ---------- */
+.content {
+  padding: 16px 16px calc(env(safe-area-inset-bottom) + 32px);
+}
+
+/* ---------- 预算总览卡片 ---------- */
+.summary-card {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 18px 16px;
+  box-shadow: 0 6px 20px rgba(99,102,241,.3);
+  margin-bottom: 18px;
+}
+.summary-row { display: flex; }
+.summary-row-4 .summary-value { font-size: 17px; }
+.summary-row-4 .summary-label { font-size: 11px; }
+.summary-row-4 .summary-hint { font-size: 9px; }
+.summary-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+.summary-item + .summary-item::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 10%;
+  height: 80%;
+  width: 1px;
+  background: rgba(255,255,255,.25);
+}
+.summary-label { font-size: 12px; opacity: .85; }
+.summary-value { font-size: 21px; font-weight: 700; }
+.summary-value.remain { color: #fff; }
+.summary-hint { font-size: 10px; opacity: .7; }
+#editBudgetBtn { cursor: pointer; }
+
+.progress-track {
+  height: 7px;
+  background: rgba(255,255,255,.25);
+  border-radius: 4px;
+  margin: 16px 0 12px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: #fff;
+  border-radius: 4px;
+  transition: width .3s ease, background .3s ease;
+}
+.progress-fill.over { background: #fecaca; }
+
+.summary-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  opacity: .92;
+}
+.summary-sub b { font-weight: 700; }
+
+/* ---------- 分组 ---------- */
+.group {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 16px;
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot-income { background: var(--income); }
+.dot-saving { background: var(--saving); }
+.dot-expense { background: var(--expense); }
+.group-sum {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 4px;
+  white-space: nowrap;
+}
+.group[data-type="expenses"] .group-sum {
+  white-space: normal;
+  line-height: 1.4;
+  max-width: 200px;
+}
+.add-btn {
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+}
+.add-btn:active { background: var(--bg); }
+
+/* ---------- 列表 ---------- */
+.list { list-style: none; }
+.list:empty::after {
+  content: '暂无记录，点击右上角添加';
+  display: block;
+  text-align: center;
+  color: var(--text-light);
+  font-size: 13px;
+  padding: 0 16px 18px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.row:active { background: #f8fafc; }
+.row-check {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  transition: all .15s;
+}
+.row-check.done { background: var(--success); border-color: var(--success); }
+.row-main { flex: 1; min-width: 0; }
+.row-name {
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-name.done { color: var(--text-muted); text-decoration: line-through; }
+.row-meta { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+.row-amount {
+  text-align: right;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.row-amount.income { color: var(--income); }
+.row-amount.saving { color: var(--saving); }
+.row-amount .sub {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-light);
+}
+.row-amount .pending { color: var(--warning); }
+
+/* ---------- 抽屉弹层 ---------- */
+.drawer-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.4);
+  z-index: 100;
+  animation: fadeIn .2s ease;
+}
+.drawer {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 101;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  padding: 8px 20px calc(env(safe-area-inset-bottom) + 20px);
+  box-shadow: var(--shadow-lg);
+  animation: slideUp .25s ease;
+  max-width: 560px;
+  margin: 0 auto;
+}
+.drawer-handle {
+  width: 40px; height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 6px auto 14px;
+}
+.drawer-title { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+.drawer-form { display: flex; flex-direction: column; gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+.field input[type="text"],
+.field input[type="date"],
+.field textarea,
+.field .share-text {
+  height: 48px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 14px;
+  font-size: 16px;
+  color: var(--text);
+  background: #fff;
+  transition: border-color .15s;
+}
+.field input:focus,
+.field textarea:focus { outline: none; border-color: var(--primary); }
+.field textarea,
+.share-text {
+  min-height: 72px;
+  padding: 12px 14px;
+  line-height: 1.5;
+  resize: none;
+  word-break: break-all;
+}
+.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.checkbox-field input { width: 20px; height: 20px; accent-color: var(--success); }
+
+.drawer-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+.btn {
+  flex: 1;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:active { background: var(--primary-dark); }
+.btn-cancel { background: var(--bg); color: var(--text-muted); }
+.btn-ghost { background: #fef2f2; color: var(--danger); flex: 0 0 72px; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+  </style>
+</head>
+<body>
+<div class="app">
+    <header class="topbar">
+      <button class="month-nav" id="prevMonth" aria-label="上个月">&#9664;</button>
+      <button class="month-label" id="monthLabel">2026-06</button>
+      <button class="month-nav" id="nextMonth" aria-label="下个月">&#9654;</button>
+    </header>
+
+    <div class="book-bar" id="bookBar" hidden>
+      <div class="book-info">
+        <span class="book-label">共享账本</span>
+        <span class="book-id" id="bookIdDisplay">—</span>
+      </div>
+      <div class="book-actions">
+        <span class="sync-indicator" id="syncIndicator" title="同步状态">
+          <span class="sync-dot" id="syncDot"></span>
+          <span class="sync-status" id="syncStatusText"></span>
+        </span>
+        <button type="button" class="book-btn" id="shareBookBtn">分享</button>
+        <button type="button" class="book-btn" id="switchBookBtn">切换</button>
+      </div>
+    </div>
+
+    <div class="sync-error" id="syncError" hidden role="alert">
+      <span class="sync-error-msg" id="syncErrorMsg"></span>
+      <button type="button" class="sync-retry-btn" id="syncRetryBtn">重试</button>
+    </div>
+
+    <main class="content">
+      <section class="summary-card" id="summaryCard">
+        <div class="summary-row summary-row-4">
+          <div class="summary-item" id="editBudgetBtn">
+            <span class="summary-label">预算总额</span>
+            <span class="summary-value" id="budgetValue">¥0</span>
+            <span class="summary-hint">点击设置</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">预算支出</span>
+            <span class="summary-value" id="budgetOutValue">¥0</span>
+            <span class="summary-hint">储蓄+开支</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">已支出</span>
+            <span class="summary-value spent" id="actualSpentValue">¥0</span>
+            <span class="summary-hint">完成开支+储蓄</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">还剩</span>
+            <span class="summary-value remain" id="remainValue">¥0</span>
+          </div>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="summary-sub">
+          <span>收入 <b id="incomeTotal">¥0</b></span>
+          <span>储蓄 <b id="savingTotal">¥0</b></span>
+          <span>开支 <b id="plannedTotal">¥0</b></span>
+        </div>
+      </section>
+
+      <section class="group" data-type="income">
+        <div class="group-head">
+          <div class="group-title">
+            <span class="dot dot-income"></span>收入
+            <span class="group-sum" id="incomeSum">¥0</span>
+          </div>
+          <button class="add-btn" data-add="income">+ 添加</button>
+        </div>
+        <ul class="list" id="incomeList"></ul>
+      </section>
+
+      <section class="group" data-type="savings">
+        <div class="group-head">
+          <div class="group-title">
+            <span class="dot dot-saving"></span>储蓄
+            <span class="group-sum" id="savingSum">¥0</span>
+          </div>
+          <button class="add-btn" data-add="savings">+ 添加</button>
+        </div>
+        <ul class="list" id="savingList"></ul>
+      </section>
+
+      <section class="group" data-type="expenses">
+        <div class="group-head">
+          <div class="group-title">
+            <span class="dot dot-expense"></span>开支
+            <span class="group-sum" id="expenseSum">已花 ¥0 / 计划 ¥0</span>
+          </div>
+          <button class="add-btn" data-add="expenses">+ 添加</button>
+        </div>
+        <ul class="list" id="expenseList"></ul>
+      </section>
+    </main>
+  </div>
+
+  <div class="drawer-mask" id="bookMask" hidden></div>
+  <div class="drawer drawer-sm" id="bookDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title">加入共享账本</h3>
+    <p class="drawer-desc">创建新账本或输入他人分享的编号，即可多人同步同一份数据。</p>
+    <form id="bookForm" class="drawer-form">
+      <label class="field">
+        <span class="field-label">账本编号</span>
+        <input type="text" id="fBookId" placeholder="例如：bk_a1b2c3d4" maxlength="32" autocapitalize="off">
+      </label>
+      <div class="drawer-actions drawer-actions-stack">
+        <button type="button" class="btn btn-primary" id="createBookBtn">创建新账本</button>
+        <button type="submit" class="btn btn-cancel">加入已有账本</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="drawer-mask" id="drawerMask" hidden></div>
+  <div class="drawer" id="drawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title" id="drawerTitle">添加</h3>
+    <form id="entryForm" class="drawer-form">
+      <label class="field">
+        <span class="field-label">名称</span>
+        <input type="text" id="fName" placeholder="例如：工资 / 房租" required maxlength="20">
+      </label>
+      <label class="field" data-mode="single">
+        <span class="field-label">金额</span>
+        <input type="text" id="fAmount" inputmode="decimal" placeholder="0.00">
+      </label>
+      <div data-mode="expense" hidden>
+        <label class="field">
+          <span class="field-label">计划金额</span>
+          <input type="text" id="fPlanned" inputmode="decimal" placeholder="0.00">
+        </label>
+        <label class="field checkbox-field">
+          <input type="checkbox" id="fDone">
+          <span>已完成支出</span>
+        </label>
+        <label class="field" id="actualWrap">
+          <span class="field-label">实付金额</span>
+          <input type="text" id="fActual" inputmode="decimal" placeholder="0.00">
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">日期</span>
+        <input type="date" id="fDate">
+      </label>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-ghost" id="deleteBtn" hidden>删除</button>
+        <button type="button" class="btn btn-cancel" id="cancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="drawer-mask" id="shareMask" hidden></div>
+  <div class="drawer drawer-sm" id="shareDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title">分享给家人</h3>
+    <p class="drawer-desc">复制下方文案发给家人，对方打开链接即可加入同一账本。</p>
+    <label class="field">
+      <span class="field-label">分享文案</span>
+      <textarea id="shareLinkText" class="share-text" readonly rows="4"></textarea>
+    </label>
+    <label class="field">
+      <span class="field-label">账本编号</span>
+      <input type="text" id="shareBookIdText" readonly>
+    </label>
+    <div class="drawer-actions drawer-actions-stack">
+      <button type="button" class="btn btn-primary" id="copyShareBtn">复制分享文案</button>
+      <button type="button" class="btn btn-cancel" id="closeShareBtn">关闭</button>
+    </div>
+  </div>
+
+  <div class="drawer-mask" id="budgetMask" hidden></div>
+  <div class="drawer drawer-sm" id="budgetDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title">设置本月预算总额</h3>
+    <form id="budgetForm" class="drawer-form">
+      <label class="field">
+        <span class="field-label">预算总额</span>
+        <input type="text" id="fBudget" inputmode="decimal" placeholder="0.00">
+      </label>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-cancel" id="budgetCancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>
+  <script>
+/**
+ * Supabase 配置 — 填入后可多人共享账本。
+ * 说明见：产品文档/02-需求设计/记账本-发布与共享.md
+ */
+window.BOOKKEEPING_CONFIG = {
+  supabaseUrl: 'https://kjasiqqtihagwsnthbvc.supabase.co',
+  supabaseAnonKey: 'sb_publishable_Cft7P8JHV2P08jHc2BP9Nw_fLptoQJ3'
+};
+
+  </script>
+  <script>
+/* ============================================
+   月度记账本 — 逻辑层（vanilla JS，无框架）
+   本地 localStorage + 可选 Supabase 多人共享
+   预算口径：预算总额=收入；预算支出=储蓄+开支(计划)；已支出=勾选完成的开支+储蓄；还剩=预算总额-预算支出
+   ============================================ */
+(function () {
+  'use strict';
+
+  var BOOK_ID_KEY = 'bookkeeping_book_id';
+  var POLL_FALLBACK_MS = 60000;
+  var SYNC_LABELS = {
+    '': '',
+    ok: '已同步',
+    syncing: '同步中…',
+    err: '同步失败',
+    live: '实时同步'
+  };
+
+  /* ---------- 工具 ---------- */
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+  function newBookId() {
+    return 'bk_' + Math.random().toString(36).slice(2, 10);
+  }
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+  function monthKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function num(v) {
+    var n = parseFloat(v);
+    return isNaN(n) || n < 0 ? 0 : n;
+  }
+  function fmt(n) {
+    n = Math.round((n + Number.EPSILON) * 100) / 100;
+    var s = (Math.abs(n) % 1 === 0) ? n.toFixed(0) : n.toFixed(2);
+    return '¥' + s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  function $(id) { return document.getElementById(id); }
+
+  var toastTimer = null;
+  function showToast(msg, ms) {
+    var el = $('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      el.classList.remove('show');
+    }, ms || 2400);
+  }
+
+  function getConfig() {
+    return window.BOOKKEEPING_CONFIG || {};
+  }
+  function cloudEnabled() {
+    var c = getConfig();
+    return !!(c.supabaseUrl && c.supabaseAnonKey);
+  }
+  function supabaseHeaders(extra) {
+    var c = getConfig();
+    var h = {
+      apikey: c.supabaseAnonKey,
+      Authorization: 'Bearer ' + c.supabaseAnonKey,
+      'Content-Type': 'application/json'
+    };
+    if (extra) {
+      Object.keys(extra).forEach(function (k) { h[k] = extra[k]; });
+    }
+    return h;
+  }
+
+  var STORAGE_PREFIX = 'bookkeeping_data_v1';
+  var SYNC_PREFIX = 'bookkeeping_sync_at';
+
+  function dataStorageKey(bookId) {
+    return STORAGE_PREFIX + '_' + (bookId || '_none');
+  }
+  function syncStorageKey(bookId) {
+    return SYNC_PREFIX + '_' + (bookId || '_none');
+  }
+
+  /* ---------- 数据层 ---------- */
+  function emptyMonth() {
+    return { income: [], savings: [], expenses: [] };
+  }
+  function emptyData() {
+    return { budgetByMonth: {}, months: {} };
+  }
+  function migrateLegacyData(bookId) {
+    var newKey = dataStorageKey(bookId);
+    if (localStorage.getItem(newKey)) return;
+    var legacy = localStorage.getItem(STORAGE_PREFIX);
+    if (legacy) localStorage.setItem(newKey, legacy);
+  }
+
+  function loadLocal(bookId) {
+    bookId = bookId || state.bookId;
+    if (!bookId) return emptyData();
+    migrateLegacyData(bookId);
+    try {
+      var raw = localStorage.getItem(dataStorageKey(bookId));
+      if (!raw) return emptyData();
+      var data = JSON.parse(raw);
+      if (!data.budgetByMonth) data.budgetByMonth = {};
+      if (!data.months) data.months = {};
+      return data;
+    } catch (e) {
+      return emptyData();
+    }
+  }
+  function saveLocal() {
+    if (!state.bookId) return;
+    try {
+      localStorage.setItem(dataStorageKey(state.bookId), JSON.stringify(state.data));
+    } catch (e) {
+      showToast('保存失败：浏览器存储空间不足或被禁用');
+    }
+  }
+  function getMonth(key) {
+    if (!state.data.months[key]) state.data.months[key] = emptyMonth();
+    return state.data.months[key];
+  }
+
+  /* ---------- 云端同步 ---------- */
+  function showSyncError(msg) {
+    state.syncFailed = true;
+    var bar = $('syncError');
+    var msgEl = $('syncErrorMsg');
+    if (bar) bar.hidden = false;
+    if (msgEl && msg) msgEl.textContent = msg;
+    setSyncStatus('err');
+  }
+  function hideSyncError() {
+    state.syncFailed = false;
+    var bar = $('syncError');
+    if (bar) bar.hidden = true;
+  }
+
+  function parseCloudError(res) {
+    return res.text().then(function (t) {
+      try {
+        var j = JSON.parse(t);
+        return j.message || t || ('HTTP ' + res.status);
+      } catch (e) {
+        return t || ('HTTP ' + res.status);
+      }
+    });
+  }
+
+  function setSyncStatus(status, label) {
+    var dot = $('syncDot');
+    var text = $('syncStatusText');
+    if (dot) dot.className = 'sync-dot' + (status ? ' ' + status : '');
+    if (text) text.textContent = label != null ? label : (SYNC_LABELS[status] || '');
+  }
+
+  function cloudFetch(bookId) {
+    var c = getConfig();
+    var url = c.supabaseUrl + '/rest/v1/ledgers?id=eq.' + encodeURIComponent(bookId) +
+      '&select=data,updated_at';
+    return fetch(url, { headers: supabaseHeaders() })
+      .then(function (res) {
+        if (!res.ok) {
+          return parseCloudError(res).then(function (msg) { throw new Error(msg); });
+        }
+        return res.json();
+      })
+      .then(function (rows) {
+        return rows.length ? rows[0] : null;
+      });
+  }
+
+  function cloudPush(bookId, data) {
+    var c = getConfig();
+    var updated_at = new Date().toISOString();
+    return fetch(c.supabaseUrl + '/rest/v1/ledgers?on_conflict=id', {
+      method: 'POST',
+      headers: supabaseHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ id: bookId, data: data, updated_at: updated_at })
+    }).then(function (res) {
+      if (!res.ok) {
+        return parseCloudError(res).then(function (msg) { throw new Error(msg); });
+      }
+      localStorage.setItem(syncStorageKey(bookId), updated_at);
+      hideSyncError();
+      return updated_at;
+    });
+  }
+
+  function applyCloudRow(row, force) {
+    if (!row || !row.data) return false;
+    var localAt = localStorage.getItem(syncStorageKey(state.bookId)) || '';
+    if (force || !localAt || row.updated_at > localAt) {
+      state.data = row.data;
+      if (!state.data.budgetByMonth) state.data.budgetByMonth = {};
+      if (!state.data.months) state.data.months = {};
+      saveLocal();
+      localStorage.setItem(syncStorageKey(state.bookId), row.updated_at);
+      hideSyncError();
+      return true;
+    }
+    return false;
+  }
+
+  function pullFromCloud(silent, force) {
+    if (!cloudEnabled() || !state.bookId) return Promise.resolve(false);
+    if (!silent) setSyncStatus('syncing');
+    return cloudFetch(state.bookId)
+      .then(function (row) {
+        if (!row) {
+          return cloudPush(state.bookId, state.data).then(function () {
+            setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+            return false;
+          });
+        }
+        var changed = applyCloudRow(row, force);
+        setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+        return changed;
+      })
+      .catch(function (err) {
+        setSyncStatus('err');
+        var msg = (err && err.message) ? err.message : '';
+        if (msg.indexOf('ledgers') !== -1 || msg.indexOf('PGRST') !== -1) {
+          showSyncError('云端同步失败：Supabase 数据库表未创建，家人无法看到数据。请联系管理员建表。');
+        } else {
+          showSyncError('云端同步失败：' + msg + '。家人可能看不到最新数据。');
+        }
+        return false;
+      });
+  }
+
+  var pollTimer = null;
+  var supabaseClient = null;
+  var realtimeChannel = null;
+  var visibilityBound = false;
+
+  function getSupabaseClient() {
+    if (!window.supabase || !window.supabase.createClient) return null;
+    var c = getConfig();
+    if (!supabaseClient) {
+      supabaseClient = window.supabase.createClient(c.supabaseUrl, c.supabaseAnonKey);
+    }
+    return supabaseClient;
+  }
+
+  function stopRealtime() {
+    state.realtimeReady = false;
+    if (realtimeChannel && supabaseClient) {
+      supabaseClient.removeChannel(realtimeChannel);
+      realtimeChannel = null;
+    }
+  }
+
+  function startRealtime() {
+    stopRealtime();
+    if (!cloudEnabled() || !state.bookId) return;
+    var client = getSupabaseClient();
+    if (!client) return;
+
+    realtimeChannel = client
+      .channel('ledger-' + state.bookId)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ledgers',
+          filter: 'id=eq.' + state.bookId
+        },
+        function (payload) {
+          var row = payload.new;
+          if (!row || !row.data) return;
+          var changed = applyCloudRow(row, false);
+          if (changed) render();
+          setSyncStatus('live');
+        }
+      )
+      .subscribe(function (status) {
+        if (status === 'SUBSCRIBED') {
+          state.realtimeReady = true;
+          setSyncStatus('live');
+        }
+      });
+  }
+
+  function stopCloudSync() {
+    stopRealtime();
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function startCloudSync() {
+    stopCloudSync();
+    if (!cloudEnabled() || !state.bookId) return;
+    startRealtime();
+    pollTimer = setInterval(function () {
+      pullFromCloud(true).then(function (changed) {
+        if (changed) render();
+      });
+    }, POLL_FALLBACK_MS);
+    if (!visibilityBound) {
+      visibilityBound = true;
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible' && state.bookId) {
+          pullFromCloud(true).then(function (changed) {
+            if (changed) render();
+          });
+        }
+      });
+    }
+  }
+
+  function retrySync() {
+    if (!cloudEnabled() || !state.bookId) return;
+    hideSyncError();
+    setSyncStatus('syncing');
+    cloudPush(state.bookId, state.data)
+      .then(function () {
+        setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+        showToast('同步成功');
+        startRealtime();
+      })
+      .catch(function () {
+        pullFromCloud(false, false).then(function (changed) {
+          if (changed) render();
+          if (!state.syncFailed) {
+            setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+            showToast('同步成功');
+            startRealtime();
+          }
+        });
+      });
+  }
+
+  function save() {
+    saveLocal();
+    if (cloudEnabled() && state.bookId) {
+      setSyncStatus('syncing');
+      cloudPush(state.bookId, state.data)
+        .then(function () { setSyncStatus(state.realtimeReady ? 'live' : 'ok'); })
+        .catch(function () {
+          setSyncStatus('err');
+          showSyncError('保存到云端失败，家人可能看不到最新数据。');
+        });
+    }
+  }
+
+  /* ---------- 账本 ID ---------- */
+  function normalizeBookId(raw) {
+    return (raw || '').trim().toLowerCase();
+  }
+  function isValidBookId(id) {
+    return /^[a-z0-9_-]{4,32}$/.test(id);
+  }
+  function resolveBookIdFromUrl() {
+    var m = /[?&]book=([^&]+)/.exec(window.location.search);
+    return m ? normalizeBookId(decodeURIComponent(m[1])) : '';
+  }
+  function getPublicEntry() {
+    var host = window.location.hostname;
+    if (host.indexOf('jsdelivr.net') !== -1) {
+      return 'https://cdn.jsdelivr.net/gh/danainiu56-bot/family-ledger@bookkeeping/';
+    }
+    if (host.indexOf('github.io') !== -1) {
+      return window.location.origin + '/family-ledger/book/';
+    }
+    var p = window.location.pathname;
+    if (p.indexOf('/book') !== -1) {
+      return window.location.origin + p.replace(/\/[^/]*$/, '/').replace(/\/?$/, '/');
+    }
+    return window.location.origin + '/family-ledger/book/';
+  }
+  function getShareLink() {
+    return getPublicEntry() + '?book=' + encodeURIComponent(state.bookId);
+  }
+  function getShareMessage() {
+    var key = monthKey(state.current);
+    var parts = key.split('-');
+    var label = parts[0] + '年' + parseInt(parts[1], 10) + '月';
+    return label + '家庭记账本，点开一起看：' + getShareLink();
+  }
+  function updateBookBar() {
+    var bar = $('bookBar');
+    if (!cloudEnabled()) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+    $('bookIdDisplay').textContent = state.bookId || '未加入';
+  }
+
+  function setBookId(id) {
+    state.bookId = normalizeBookId(id);
+    localStorage.setItem(BOOK_ID_KEY, state.bookId);
+    state.data = loadLocal(state.bookId);
+    updateBookBar();
+    var url = new URL(window.location.href);
+    url.searchParams.set('book', state.bookId);
+    window.history.replaceState({}, '', url.pathname + url.search);
+  }
+
+  function openBookSetup(force) {
+    $('fBookId').value = state.bookId || '';
+    $('bookMask').hidden = false;
+    $('bookDrawer').hidden = false;
+    $('bookDrawer').dataset.force = force ? '1' : '';
+    setTimeout(function () { $('fBookId').focus(); }, 280);
+  }
+  function closeBookSetup() {
+    if ($('bookDrawer').dataset.force === '1' && !state.bookId) return;
+    $('bookMask').hidden = true;
+    $('bookDrawer').hidden = true;
+  }
+
+  function joinBook(id) {
+    id = normalizeBookId(id);
+    if (!isValidBookId(id)) {
+      showToast('账本编号格式不正确');
+      return Promise.resolve(false);
+    }
+    stopCloudSync();
+    setBookId(id);
+    return pullFromCloud(false, true).then(function (changed) {
+      closeBookSetup();
+      render();
+      startCloudSync();
+      return true;
+    });
+  }
+
+  function copyText(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function showShareDrawerContent() {
+    $('shareLinkText').value = getShareMessage();
+    $('shareBookIdText').value = state.bookId;
+    $('shareMask').hidden = false;
+    $('shareDrawer').hidden = false;
+    setTimeout(function () {
+      var el = $('shareLinkText');
+      el.focus();
+      el.select();
+    }, 280);
+  }
+
+  function openShareDrawer() {
+    if (!state.bookId) {
+      showToast('请先创建或加入账本');
+      return;
+    }
+    if (!cloudEnabled()) {
+      showToast('未配置云端，无法分享给家人');
+      return;
+    }
+    setSyncStatus('syncing');
+    cloudPush(state.bookId, state.data).then(function () {
+      setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+      showShareDrawerContent();
+    }).catch(function (err) {
+      setSyncStatus('err');
+      var msg = (err && err.message) ? err.message : '';
+      if (msg.indexOf('ledgers') !== -1 || msg.indexOf('PGRST') !== -1) {
+        showSyncError('云端表未创建，家人无法看到数据。');
+        showToast('请先在 Supabase 创建 ledgers 表');
+      } else {
+        showSyncError('保存到云端失败：' + msg);
+        showToast('保存失败，请点重试或稍后再分享');
+      }
+    });
+  }
+
+  function closeShareDrawer() {
+    $('shareMask').hidden = true;
+    $('shareDrawer').hidden = true;
+  }
+
+  function doCopyShare() {
+    var text = $('shareLinkText').value;
+    if (!text) return;
+    if (copyText(text)) {
+      showToast('已复制，去微信粘贴发给家人吧');
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        showToast('已复制，去微信粘贴发给家人吧');
+      }).catch(function () {
+        $('shareLinkText').focus();
+        $('shareLinkText').select();
+        showToast('请长按上方文案框，选择「复制」');
+      });
+      return;
+    }
+    $('shareLinkText').focus();
+    $('shareLinkText').select();
+    showToast('请长按上方文案框，选择「复制」');
+  }
+
+  /* ---------- 全局状态 ---------- */
+  var state = {
+    data: emptyData(),
+    current: new Date(),
+    editing: null,
+    bookId: '',
+    syncFailed: false,
+    realtimeReady: false
+  };
+
+  /* ---------- 计算 ---------- */
+  function sum(list, field) {
+    var t = 0;
+    for (var i = 0; i < list.length; i++) t += num(list[i][field]);
+    return t;
+  }
+  function completedExpenseTotal(expenses) {
+    var t = 0;
+    for (var i = 0; i < expenses.length; i++) {
+      if (!expenses[i].done) continue;
+      var amt = expenses[i].actualAmount;
+      if (amt === '' || amt == null) amt = expenses[i].plannedAmount;
+      t += num(amt);
+    }
+    return t;
+  }
+  function calcActualSpent(m) {
+    return sum(m.savings, 'amount') + completedExpenseTotal(m.expenses);
+  }
+  function syncBudgetFromIncome(key) {
+    var m = getMonth(key);
+    state.data.budgetByMonth[key] = sum(m.income, 'amount');
+  }
+
+  /* ---------- 渲染 ---------- */
+  function render() {
+    var key = monthKey(state.current);
+    var m = getMonth(key);
+    $('monthLabel').textContent = key;
+
+    var incomeT = sum(m.income, 'amount');
+    var savingT = sum(m.savings, 'amount');
+    var plannedT = sum(m.expenses, 'plannedAmount');
+    var expenseDone = completedExpenseTotal(m.expenses);
+    var budget = num(state.data.budgetByMonth[key]);
+    var budgetOut = savingT + plannedT;
+    var actualSpent = calcActualSpent(m);
+    var remain = budget - budgetOut;
+
+    $('budgetValue').textContent = budget ? fmt(budget) : '¥0';
+    $('budgetOutValue').textContent = fmt(budgetOut);
+    $('actualSpentValue').textContent = fmt(actualSpent);
+    $('remainValue').textContent = fmt(remain);
+    $('remainValue').style.color = remain < 0 ? '#fecaca' : '#fff';
+
+    var pct = budget > 0 ? Math.min(100, (budgetOut / budget) * 100) : 0;
+    var fill = $('progressFill');
+    fill.style.width = pct + '%';
+    fill.classList.toggle('over', budget > 0 && budgetOut > budget);
+
+    $('incomeTotal').textContent = fmt(incomeT);
+    $('savingTotal').textContent = fmt(savingT);
+    $('plannedTotal').textContent = fmt(plannedT);
+    $('incomeSum').textContent = fmt(incomeT);
+    $('savingSum').textContent = fmt(savingT);
+    var expenseRemain = plannedT - expenseDone;
+    $('expenseSum').textContent =
+      '已花 ' + fmt(expenseDone) + ' / 计划 ' + fmt(plannedT) + ' / 还剩 ' + fmt(expenseRemain);
+
+    renderSimpleList($('incomeList'), m.income, 'income');
+    renderSimpleList($('savingList'), m.savings, 'savings');
+    renderExpenseList($('expenseList'), m.expenses);
+    updateBookBar();
+  }
+
+  function renderSimpleList(ul, list, type) {
+    ul.innerHTML = '';
+    var cls = type === 'income' ? 'income' : 'saving';
+    list.forEach(function (item) {
+      var li = document.createElement('li');
+      li.className = 'row';
+      li.innerHTML =
+        '<div class="row-main">' +
+        '<div class="row-name"></div>' +
+        '<div class="row-meta"></div>' +
+        '</div>' +
+        '<div class="row-amount ' + cls + '"></div>';
+      li.querySelector('.row-name').textContent = item.name;
+      li.querySelector('.row-meta').textContent = item.date || '';
+      li.querySelector('.row-amount').textContent = fmt(num(item.amount));
+      li.addEventListener('click', function () { openEntry(type, item.id); });
+      ul.appendChild(li);
+    });
+  }
+
+  function renderExpenseList(ul, list) {
+    ul.innerHTML = '';
+    list.forEach(function (item) {
+      var li = document.createElement('li');
+      li.className = 'row';
+
+      var check = document.createElement('div');
+      check.className = 'row-check' + (item.done ? ' done' : '');
+      check.innerHTML = item.done ? '&#10003;' : '';
+      check.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleDone(item.id);
+      });
+
+      var main = document.createElement('div');
+      main.className = 'row-main';
+      var name = document.createElement('div');
+      name.className = 'row-name' + (item.done ? ' done' : '');
+      name.textContent = item.name;
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      meta.textContent = (item.date || '') + (item.done ? ' · 已完成' : ' · 待支出');
+      main.appendChild(name);
+      main.appendChild(meta);
+
+      var amount = document.createElement('div');
+      amount.className = 'row-amount';
+      if (item.done) {
+        amount.innerHTML = fmt(num(item.actualAmount)) +
+          '<span class="sub">计划 ' + fmt(num(item.plannedAmount)) + '</span>';
+      } else {
+        amount.innerHTML = '<span class="pending">计划 ' + fmt(num(item.plannedAmount)) + '</span>';
+      }
+
+      li.appendChild(check);
+      li.appendChild(main);
+      li.appendChild(amount);
+      li.addEventListener('click', function () { openEntry('expenses', item.id); });
+      ul.appendChild(li);
+    });
+  }
+
+  /* ---------- 明细 CRUD ---------- */
+  function findItem(type, id) {
+    var list = getMonth(monthKey(state.current))[type];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  function toggleDone(id) {
+    var item = findItem('expenses', id);
+    if (!item) return;
+    item.done = !item.done;
+    if (item.done && (item.actualAmount === '' || item.actualAmount == null)) {
+      item.actualAmount = item.plannedAmount;
+    }
+    save();
+    render();
+  }
+
+  /* ---------- 明细抽屉 ---------- */
+  function openEntry(type, id) {
+    state.editing = { type: type, id: id || null };
+    var isExpense = type === 'expenses';
+    var titleMap = { income: '收入', savings: '储蓄', expenses: '开支' };
+
+    document.querySelectorAll('[data-mode="single"]').forEach(function (el) {
+      el.hidden = isExpense;
+    });
+    document.querySelector('[data-mode="expense"]').hidden = !isExpense;
+
+    $('drawerTitle').textContent = (id ? '编辑' : '添加') + titleMap[type];
+    $('deleteBtn').hidden = !id;
+
+    var item = id ? findItem(type, id) : null;
+    $('fName').value = item ? item.name : '';
+    $('fDate').value = item ? (item.date || todayISO()) : todayISO();
+
+    if (isExpense) {
+      $('fPlanned').value = item ? item.plannedAmount : '';
+      $('fDone').checked = item ? !!item.done : false;
+      $('fActual').value = item ? (item.actualAmount || '') : '';
+      syncActualVisibility();
+    } else {
+      $('fAmount').value = item ? item.amount : '';
+    }
+
+    showDrawer('drawer', 'drawerMask');
+    setTimeout(function () { $('fName').focus(); }, 280);
+  }
+
+  function syncActualVisibility() {
+    $('actualWrap').style.display = $('fDone').checked ? 'flex' : 'none';
+    if ($('fDone').checked && !$('fActual').value) {
+      $('fActual').value = $('fPlanned').value;
+    }
+  }
+
+  function submitEntry(e) {
+    e.preventDefault();
+    var ed = state.editing;
+    if (!ed) return;
+    var name = $('fName').value.trim();
+    if (!name) { $('fName').focus(); return; }
+    var date = $('fDate').value || todayISO();
+    var list = getMonth(monthKey(state.current))[ed.type];
+    var item = ed.id ? findItem(ed.type, ed.id) : null;
+
+    if (ed.type === 'expenses') {
+      var planned = num($('fPlanned').value);
+      var done = $('fDone').checked;
+      var actual = done ? num($('fActual').value || $('fPlanned').value) : '';
+      if (item) {
+        item.name = name; item.date = date;
+        item.plannedAmount = planned; item.done = done; item.actualAmount = actual;
+      } else {
+        list.push({ id: uid(), name: name, plannedAmount: planned, actualAmount: actual, done: done, date: date });
+      }
+    } else {
+      var amount = num($('fAmount').value);
+      if (item) {
+        item.name = name; item.date = date; item.amount = amount;
+      } else {
+        list.push({ id: uid(), name: name, amount: amount, date: date });
+      }
+    }
+    if (ed.type === 'income') {
+      syncBudgetFromIncome(monthKey(state.current));
+    }
+    save();
+    render();
+    closeDrawers();
+  }
+
+  function deleteEntry() {
+    var ed = state.editing;
+    if (!ed || !ed.id) return;
+    if (!confirm('确定删除这条记录？')) return;
+    var list = getMonth(monthKey(state.current))[ed.type];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === ed.id) { list.splice(i, 1); break; }
+    }
+    if (ed.type === 'income') {
+      syncBudgetFromIncome(monthKey(state.current));
+    }
+    save();
+    render();
+    closeDrawers();
+  }
+
+  /* ---------- 预算抽屉 ---------- */
+  function openBudget() {
+    var key = monthKey(state.current);
+    $('fBudget').value = state.data.budgetByMonth[key] || '';
+    showDrawer('budgetDrawer', 'budgetMask');
+    setTimeout(function () { $('fBudget').focus(); }, 280);
+  }
+  function submitBudget(e) {
+    e.preventDefault();
+    var key = monthKey(state.current);
+    state.data.budgetByMonth[key] = num($('fBudget').value);
+    save();
+    render();
+    closeDrawers();
+  }
+
+  /* ---------- 抽屉显隐 ---------- */
+  function showDrawer(drawerId, maskId) {
+    $(maskId).hidden = false;
+    $(drawerId).hidden = false;
+  }
+  function closeDrawers() {
+    ['drawer', 'drawerMask', 'budgetDrawer', 'budgetMask'].forEach(function (id) {
+      $(id).hidden = true;
+    });
+    state.editing = null;
+  }
+
+  /* ---------- 事件绑定 ---------- */
+  function bind() {
+    $('prevMonth').addEventListener('click', function () {
+      state.current.setMonth(state.current.getMonth() - 1);
+      render();
+    });
+    $('nextMonth').addEventListener('click', function () {
+      state.current.setMonth(state.current.getMonth() + 1);
+      render();
+    });
+    $('monthLabel').addEventListener('click', function () {
+      var input = prompt('跳转到月份（格式 YYYY-MM）', monthKey(state.current));
+      if (!input) return;
+      var match = /^(\d{4})-(\d{1,2})$/.exec(input.trim());
+      if (!match) { showToast('格式应为 YYYY-MM'); return; }
+      var mm = parseInt(match[2], 10);
+      if (mm < 1 || mm > 12) { showToast('月份应在 1-12 之间'); return; }
+      state.current = new Date(parseInt(match[1], 10), mm - 1, 1);
+      render();
+    });
+
+    document.querySelectorAll('[data-add]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        openEntry(btn.getAttribute('data-add'), null);
+      });
+    });
+
+    $('editBudgetBtn').addEventListener('click', openBudget);
+
+    $('entryForm').addEventListener('submit', submitEntry);
+    $('cancelBtn').addEventListener('click', closeDrawers);
+    $('deleteBtn').addEventListener('click', deleteEntry);
+    $('fDone').addEventListener('change', syncActualVisibility);
+
+    $('budgetForm').addEventListener('submit', submitBudget);
+    $('budgetCancelBtn').addEventListener('click', closeDrawers);
+
+    $('drawerMask').addEventListener('click', closeDrawers);
+    $('budgetMask').addEventListener('click', closeDrawers);
+
+    $('syncRetryBtn').addEventListener('click', retrySync);
+    $('shareBookBtn').addEventListener('click', openShareDrawer);
+    $('copyShareBtn').addEventListener('click', doCopyShare);
+    $('closeShareBtn').addEventListener('click', closeShareDrawer);
+    $('shareMask').addEventListener('click', closeShareDrawer);
+    $('switchBookBtn').addEventListener('click', function () { openBookSetup(false); });
+    $('createBookBtn').addEventListener('click', function () {
+      joinBook(newBookId());
+    });
+    $('bookForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      joinBook($('fBookId').value);
+    });
+    $('bookMask').addEventListener('click', closeBookSetup);
+  }
+
+  /* ---------- 启动 ---------- */
+  function init() {
+    bind();
+
+    var urlBook = resolveBookIdFromUrl();
+    var savedBook = normalizeBookId(localStorage.getItem(BOOK_ID_KEY));
+    state.bookId = urlBook || savedBook;
+    if (state.bookId) {
+      setBookId(state.bookId);
+      pullFromCloud(false, !!urlBook).then(function () {
+        render();
+        startCloudSync();
+      });
+    } else if (cloudEnabled()) {
+      joinBook(newBookId()).then(function () {
+        showToast('已创建家庭账本，开始记账吧');
+      });
+    } else {
+      render();
+    }
+  }
+
+  init();
+})();
+
+  </script>
+</body>
+</html>
