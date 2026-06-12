@@ -520,7 +520,8 @@
     editing: null,
     bookId: '',
     syncFailed: false,
-    realtimeReady: false
+    realtimeReady: false,
+    payingExpenseId: null
   };
 
   /* ---------- 计算 ---------- */
@@ -681,6 +682,17 @@
 
       li.appendChild(check);
       li.appendChild(main);
+      if (status !== 'done') {
+        var payBtn = document.createElement('button');
+        payBtn.type = 'button';
+        payBtn.className = 'row-pay-btn';
+        payBtn.textContent = '记支出';
+        payBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          openPaymentDrawer(item.id);
+        });
+        li.appendChild(payBtn);
+      }
       li.appendChild(amount);
       li.addEventListener('click', function () { openEntry('expenses', item.id); });
       ul.appendChild(li);
@@ -724,6 +736,54 @@
     $('expensePaidText').textContent = fmt(paid);
     $('expenseRemainText').textContent = fmt(Math.max(0, planned - paid));
     if ($('fPayment')) $('fPayment').value = '';
+  }
+
+  function openPaymentDrawer(id) {
+    var item = findItem('expenses', id);
+    if (!item || expenseStatus(item) === 'done') return;
+    state.payingExpenseId = id;
+    var paid = expensePaid(item);
+    var planned = num(item.plannedAmount);
+    $('paymentTitle').textContent = '记支出 · ' + item.name;
+    $('payPaidText').textContent = fmt(paid);
+    $('payRemainText').textContent = fmt(Math.max(0, planned - paid));
+    $('fPayAmount').value = '';
+    $('fPayDate').value = todayISO();
+    $('paymentMask').hidden = false;
+    $('paymentDrawer').hidden = false;
+    setTimeout(function () { $('fPayAmount').focus(); }, 280);
+  }
+
+  function closePaymentDrawer() {
+    state.payingExpenseId = null;
+    $('paymentMask').hidden = true;
+    $('paymentDrawer').hidden = true;
+  }
+
+  function submitPayment(e) {
+    e.preventDefault();
+    var id = state.payingExpenseId;
+    if (!id) return;
+    var item = findItem('expenses', id);
+    if (!item) return;
+    var amt = num($('fPayAmount').value);
+    if (amt <= 0) {
+      showToast('请输入本次支出金额');
+      $('fPayAmount').focus();
+      return;
+    }
+    ensurePayments(item);
+    item.payments.push({
+      id: uid(),
+      amount: amt,
+      date: $('fPayDate').value || todayISO()
+    });
+    refreshExpenseDone(item);
+    item.actualAmount = expensePaid(item);
+    save();
+    render();
+    closePaymentDrawer();
+    showToast(expenseStatus(item) === 'done' ? '已完成全部支出' : '已记录部分支出');
   }
 
   /* ---------- 明细抽屉 ---------- */
@@ -893,6 +953,10 @@
 
     $('drawerMask').addEventListener('click', closeDrawers);
     $('budgetMask').addEventListener('click', closeDrawers);
+
+    $('paymentForm').addEventListener('submit', submitPayment);
+    $('paymentCancelBtn').addEventListener('click', closePaymentDrawer);
+    $('paymentMask').addEventListener('click', closePaymentDrawer);
 
     $('syncRetryBtn').addEventListener('click', retrySync);
     $('shareBookBtn').addEventListener('click', openShareDrawer);

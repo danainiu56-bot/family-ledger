@@ -384,6 +384,17 @@ input { font-family: inherit; }
 }
 .row-amount .pending { color: var(--warning); }
 .row-amount .partial-main { color: var(--expense); }
+.row-pay-btn {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: var(--expense);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #fed7aa;
+}
+.row-pay-btn:active { background: #ffedd5; }
 
 .expense-summary {
   display: flex;
@@ -638,6 +649,30 @@ input { font-family: inherit; }
         <button type="button" class="btn btn-ghost" id="deleteBtn" hidden>删除</button>
         <button type="button" class="btn btn-cancel" id="cancelBtn">取消</button>
         <button type="submit" class="btn btn-primary">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="drawer-mask" id="paymentMask" hidden></div>
+  <div class="drawer drawer-sm" id="paymentDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title" id="paymentTitle">记支出</h3>
+    <form id="paymentForm" class="drawer-form">
+      <div class="expense-summary">
+        <span>已支出 <b id="payPaidText">¥0</b></span>
+        <span>剩余 <b id="payRemainText">¥0</b></span>
+      </div>
+      <label class="field">
+        <span class="field-label">本次支出金额</span>
+        <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00">
+      </label>
+      <label class="field">
+        <span class="field-label">日期</span>
+        <input type="date" id="fPayDate">
+      </label>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-cancel" id="paymentCancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">确认</button>
       </div>
     </form>
   </div>
@@ -1215,7 +1250,8 @@ window.BOOKKEEPING_CONFIG = {
     editing: null,
     bookId: '',
     syncFailed: false,
-    realtimeReady: false
+    realtimeReady: false,
+    payingExpenseId: null
   };
 
   /* ---------- 计算 ---------- */
@@ -1376,6 +1412,17 @@ window.BOOKKEEPING_CONFIG = {
 
       li.appendChild(check);
       li.appendChild(main);
+      if (status !== 'done') {
+        var payBtn = document.createElement('button');
+        payBtn.type = 'button';
+        payBtn.className = 'row-pay-btn';
+        payBtn.textContent = '记支出';
+        payBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          openPaymentDrawer(item.id);
+        });
+        li.appendChild(payBtn);
+      }
       li.appendChild(amount);
       li.addEventListener('click', function () { openEntry('expenses', item.id); });
       ul.appendChild(li);
@@ -1419,6 +1466,54 @@ window.BOOKKEEPING_CONFIG = {
     $('expensePaidText').textContent = fmt(paid);
     $('expenseRemainText').textContent = fmt(Math.max(0, planned - paid));
     if ($('fPayment')) $('fPayment').value = '';
+  }
+
+  function openPaymentDrawer(id) {
+    var item = findItem('expenses', id);
+    if (!item || expenseStatus(item) === 'done') return;
+    state.payingExpenseId = id;
+    var paid = expensePaid(item);
+    var planned = num(item.plannedAmount);
+    $('paymentTitle').textContent = '记支出 · ' + item.name;
+    $('payPaidText').textContent = fmt(paid);
+    $('payRemainText').textContent = fmt(Math.max(0, planned - paid));
+    $('fPayAmount').value = '';
+    $('fPayDate').value = todayISO();
+    $('paymentMask').hidden = false;
+    $('paymentDrawer').hidden = false;
+    setTimeout(function () { $('fPayAmount').focus(); }, 280);
+  }
+
+  function closePaymentDrawer() {
+    state.payingExpenseId = null;
+    $('paymentMask').hidden = true;
+    $('paymentDrawer').hidden = true;
+  }
+
+  function submitPayment(e) {
+    e.preventDefault();
+    var id = state.payingExpenseId;
+    if (!id) return;
+    var item = findItem('expenses', id);
+    if (!item) return;
+    var amt = num($('fPayAmount').value);
+    if (amt <= 0) {
+      showToast('请输入本次支出金额');
+      $('fPayAmount').focus();
+      return;
+    }
+    ensurePayments(item);
+    item.payments.push({
+      id: uid(),
+      amount: amt,
+      date: $('fPayDate').value || todayISO()
+    });
+    refreshExpenseDone(item);
+    item.actualAmount = expensePaid(item);
+    save();
+    render();
+    closePaymentDrawer();
+    showToast(expenseStatus(item) === 'done' ? '已完成全部支出' : '已记录部分支出');
   }
 
   /* ---------- 明细抽屉 ---------- */
@@ -1588,6 +1683,10 @@ window.BOOKKEEPING_CONFIG = {
 
     $('drawerMask').addEventListener('click', closeDrawers);
     $('budgetMask').addEventListener('click', closeDrawers);
+
+    $('paymentForm').addEventListener('submit', submitPayment);
+    $('paymentCancelBtn').addEventListener('click', closePaymentDrawer);
+    $('paymentMask').addEventListener('click', closePaymentDrawer);
 
     $('syncRetryBtn').addEventListener('click', retrySync);
     $('shareBookBtn').addEventListener('click', openShareDrawer);

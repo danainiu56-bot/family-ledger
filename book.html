@@ -183,6 +183,30 @@
     </form>
   </div>
 
+  <div class="drawer-mask" id="paymentMask" hidden></div>
+  <div class="drawer drawer-sm" id="paymentDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title" id="paymentTitle">记支出</h3>
+    <form id="paymentForm" class="drawer-form">
+      <div class="expense-summary">
+        <span>已支出 <b id="payPaidText">¥0</b></span>
+        <span>剩余 <b id="payRemainText">¥0</b></span>
+      </div>
+      <label class="field">
+        <span class="field-label">本次支出金额</span>
+        <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00">
+      </label>
+      <label class="field">
+        <span class="field-label">日期</span>
+        <input type="date" id="fPayDate">
+      </label>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-cancel" id="paymentCancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">确认</button>
+      </div>
+    </form>
+  </div>
+
   <div class="drawer-mask" id="shareMask" hidden></div>
   <div class="drawer drawer-sm" id="shareDrawer" hidden>
     <div class="drawer-handle"></div>

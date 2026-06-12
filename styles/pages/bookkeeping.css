@@ -370,6 +370,17 @@ input { font-family: inherit; }
 }
 .row-amount .pending { color: var(--warning); }
 .row-amount .partial-main { color: var(--expense); }
+.row-pay-btn {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: var(--expense);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #fed7aa;
+}
+.row-pay-btn:active { background: #ffedd5; }
 
 .expense-summary {
   display: flex;
