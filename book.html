@@ -161,14 +161,15 @@
           <span class="field-label">计划金额</span>
           <input type="text" id="fPlanned" inputmode="decimal" placeholder="0.00">
         </label>
-        <label class="field checkbox-field">
-          <input type="checkbox" id="fDone">
-          <span>已完成支出</span>
+        <div class="expense-summary" id="expenseSummary" hidden>
+          <span>已支出 <b id="expensePaidText">¥0</b></span>
+          <span>剩余 <b id="expenseRemainText">¥0</b></span>
+        </div>
+        <label class="field">
+          <span class="field-label">本次支出金额</span>
+          <input type="text" id="fPayment" inputmode="decimal" placeholder="0.00">
         </label>
-        <label class="field" id="actualWrap">
-          <span class="field-label">实付金额</span>
-          <input type="text" id="fActual" inputmode="decimal" placeholder="0.00">
-        </label>
+        <p class="field-hint">填写本次实际支付金额，可多次记录部分支出</p>
       </div>
       <label class="field">
         <span class="field-label">日期</span>

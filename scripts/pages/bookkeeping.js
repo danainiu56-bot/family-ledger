@@ -529,14 +529,45 @@
     for (var i = 0; i < list.length; i++) t += num(list[i][field]);
     return t;
   }
+  function expensePaid(item) {
+    if (item.payments && item.payments.length) {
+      var t = 0;
+      for (var i = 0; i < item.payments.length; i++) t += num(item.payments[i].amount);
+      return t;
+    }
+    if (item.done) {
+      var amt = item.actualAmount;
+      if (amt === '' || amt == null) amt = item.plannedAmount;
+      return num(amt);
+    }
+    return 0;
+  }
+  function expenseStatus(item) {
+    var paid = expensePaid(item);
+    var planned = num(item.plannedAmount);
+    if (paid <= 0) return 'pending';
+    if (planned > 0 && paid >= planned) return 'done';
+    return 'partial';
+  }
+  function ensurePayments(item) {
+    if (item.payments) return item.payments;
+    var arr = [];
+    if (item.done) {
+      var amt = item.actualAmount;
+      if (amt === '' || amt == null) amt = item.plannedAmount;
+      amt = num(amt);
+      if (amt > 0) arr.push({ id: uid(), amount: amt, date: item.date || todayISO() });
+    }
+    item.payments = arr;
+    return arr;
+  }
+  function refreshExpenseDone(item) {
+    var planned = num(item.plannedAmount);
+    item.done = (planned > 0 && expensePaid(item) >= planned);
+  }
   function completedExpenseTotal(expenses) {
     var t = 0;
-    for (var i = 0; i < expenses.length; i++) {
-      if (!expenses[i].done) continue;
-      var amt = expenses[i].actualAmount;
-      if (amt === '' || amt == null) amt = expenses[i].plannedAmount;
-      t += num(amt);
-    }
+    for (var i = 0; i < expenses.length; i++) t += expensePaid(expenses[i]);
     return t;
   }
   function calcActualSpent(m) {
@@ -614,9 +645,14 @@
       var li = document.createElement('li');
       li.className = 'row';
 
+      var status = expenseStatus(item);
+      var paid = expensePaid(item);
+      var planned = num(item.plannedAmount);
+      var remain = Math.max(0, planned - paid);
+
       var check = document.createElement('div');
-      check.className = 'row-check' + (item.done ? ' done' : '');
-      check.innerHTML = item.done ? '&#10003;' : '';
+      check.className = 'row-check' + (status === 'done' ? ' done' : (status === 'partial' ? ' partial' : ''));
+      check.innerHTML = status === 'done' ? '&#10003;' : (status === 'partial' ? '·' : '');
       check.addEventListener('click', function (e) {
         e.stopPropagation();
         toggleDone(item.id);
@@ -625,21 +661,22 @@
       var main = document.createElement('div');
       main.className = 'row-main';
       var name = document.createElement('div');
-      name.className = 'row-name' + (item.done ? ' done' : '');
+      name.className = 'row-name' + (status === 'done' ? ' done' : '');
       name.textContent = item.name;
       var meta = document.createElement('div');
       meta.className = 'row-meta';
-      meta.textContent = (item.date || '') + (item.done ? ' · 已完成' : ' · 待支出');
+      var statusText = status === 'done' ? ' · 已完成' : (status === 'partial' ? ' · 部分支出' : ' · 待支出');
+      meta.textContent = (item.date || '') + statusText;
       main.appendChild(name);
       main.appendChild(meta);
 
       var amount = document.createElement('div');
       amount.className = 'row-amount';
-      if (item.done) {
-        amount.innerHTML = fmt(num(item.actualAmount)) +
-          '<span class="sub">计划 ' + fmt(num(item.plannedAmount)) + '</span>';
+      if (status === 'pending') {
+        amount.innerHTML = '<span class="pending">计划 ' + fmt(planned) + '</span>';
       } else {
-        amount.innerHTML = '<span class="pending">计划 ' + fmt(num(item.plannedAmount)) + '</span>';
+        amount.innerHTML = '<span class="partial-main">' + fmt(paid) + '</span>' +
+          '<span class="sub">计划 ' + fmt(planned) + ' / 还剩 ' + fmt(remain) + '</span>';
       }
 
       li.appendChild(check);
@@ -659,12 +696,34 @@
   function toggleDone(id) {
     var item = findItem('expenses', id);
     if (!item) return;
-    item.done = !item.done;
-    if (item.done && (item.actualAmount === '' || item.actualAmount == null)) {
-      item.actualAmount = item.plannedAmount;
+    if (expenseStatus(item) === 'done') return;
+    ensurePayments(item);
+    var planned = num(item.plannedAmount);
+    var paid = expensePaid(item);
+    var remainder = Math.max(0, planned - paid);
+    if (remainder > 0) {
+      item.payments.push({ id: uid(), amount: remainder, date: todayISO() });
     }
+    refreshExpenseDone(item);
+    item.actualAmount = expensePaid(item);
     save();
     render();
+  }
+
+  function syncExpenseSummary(item) {
+    var summary = $('expenseSummary');
+    if (!summary) return;
+    if (!item) {
+      summary.hidden = true;
+      if ($('fPayment')) $('fPayment').value = '';
+      return;
+    }
+    summary.hidden = false;
+    var paid = expensePaid(item);
+    var planned = num(item.plannedAmount);
+    $('expensePaidText').textContent = fmt(paid);
+    $('expenseRemainText').textContent = fmt(Math.max(0, planned - paid));
+    if ($('fPayment')) $('fPayment').value = '';
   }
 
   /* ---------- 明细抽屉 ---------- */
@@ -687,22 +746,13 @@
 
     if (isExpense) {
       $('fPlanned').value = item ? item.plannedAmount : '';
-      $('fDone').checked = item ? !!item.done : false;
-      $('fActual').value = item ? (item.actualAmount || '') : '';
-      syncActualVisibility();
+      syncExpenseSummary(item);
     } else {
       $('fAmount').value = item ? item.amount : '';
     }
 
     showDrawer('drawer', 'drawerMask');
     setTimeout(function () { $('fName').focus(); }, 280);
-  }
-
-  function syncActualVisibility() {
-    $('actualWrap').style.display = $('fDone').checked ? 'flex' : 'none';
-    if ($('fDone').checked && !$('fActual').value) {
-      $('fActual').value = $('fPlanned').value;
-    }
   }
 
   function submitEntry(e) {
@@ -717,13 +767,33 @@
 
     if (ed.type === 'expenses') {
       var planned = num($('fPlanned').value);
-      var done = $('fDone').checked;
-      var actual = done ? num($('fActual').value || $('fPlanned').value) : '';
+      var paymentAmt = num($('fPayment').value);
       if (item) {
-        item.name = name; item.date = date;
-        item.plannedAmount = planned; item.done = done; item.actualAmount = actual;
+        item.name = name;
+        item.date = date;
+        item.plannedAmount = planned;
+        ensurePayments(item);
+        if (paymentAmt > 0) {
+          item.payments.push({ id: uid(), amount: paymentAmt, date: date });
+        }
+        refreshExpenseDone(item);
+        item.actualAmount = expensePaid(item);
       } else {
-        list.push({ id: uid(), name: name, plannedAmount: planned, actualAmount: actual, done: done, date: date });
+        var newItem = {
+          id: uid(),
+          name: name,
+          plannedAmount: planned,
+          date: date,
+          payments: [],
+          done: false,
+          actualAmount: ''
+        };
+        if (paymentAmt > 0) {
+          newItem.payments.push({ id: uid(), amount: paymentAmt, date: date });
+        }
+        refreshExpenseDone(newItem);
+        newItem.actualAmount = expensePaid(newItem);
+        list.push(newItem);
       }
     } else {
       var amount = num($('fAmount').value);
@@ -817,7 +887,6 @@
     $('entryForm').addEventListener('submit', submitEntry);
     $('cancelBtn').addEventListener('click', closeDrawers);
     $('deleteBtn').addEventListener('click', deleteEntry);
-    $('fDone').addEventListener('change', syncActualVisibility);
 
     $('budgetForm').addEventListener('submit', submitBudget);
     $('budgetCancelBtn').addEventListener('click', closeDrawers);
