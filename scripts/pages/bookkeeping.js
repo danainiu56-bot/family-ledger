@@ -569,7 +569,38 @@
   }
   function refreshExpenseDone(item) {
     var planned = num(item.plannedAmount);
-    item.done = (planned > 0 && expensePaid(item) >= planned);
+    var wasDone = !!item.done;
+    var nowDone = planned > 0 && expensePaid(item) >= planned;
+    item.done = nowDone;
+    if (nowDone && !wasDone) {
+      item.completedAt = new Date().toISOString();
+    } else if (!nowDone) {
+      delete item.completedAt;
+    }
+  }
+  function expenseCompletedSortTime(item) {
+    if (item.completedAt) return item.completedAt;
+    if (item.payments && item.payments.length) {
+      return item.payments[item.payments.length - 1].date || '';
+    }
+    return item.date || '';
+  }
+  function expenseSortRank(item) {
+    var status = expenseStatus(item);
+    if (status === 'done') return 0;
+    if (status === 'partial') return 1;
+    return 2;
+  }
+  function sortExpensesForDisplay(list) {
+    return list.slice().sort(function (a, b) {
+      var ra = expenseSortRank(a);
+      var rb = expenseSortRank(b);
+      if (ra !== rb) return ra - rb;
+      if (ra === 0) {
+        return expenseCompletedSortTime(b).localeCompare(expenseCompletedSortTime(a));
+      }
+      return 0;
+    });
   }
   function completedExpenseTotal(expenses) {
     var t = 0;
@@ -647,7 +678,7 @@
 
   function renderExpenseList(ul, list) {
     ul.innerHTML = '';
-    list.forEach(function (item) {
+    sortExpensesForDisplay(list).forEach(function (item) {
       var li = document.createElement('li');
       li.className = 'row';
 
@@ -724,6 +755,7 @@
         item.payments.pop();
       }
       item.done = false;
+      delete item.completedAt;
       if (!item.payments.length) {
         delete item.payments;
         item.actualAmount = '';
