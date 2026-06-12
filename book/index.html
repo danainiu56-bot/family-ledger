@@ -347,6 +347,7 @@ input { font-family: inherit; }
   justify-content: center;
   color: #fff;
   font-size: 13px;
+  cursor: pointer;
   transition: all .15s;
 }
 .row-check.done { background: var(--success); border-color: var(--success); }
@@ -1410,9 +1411,13 @@ window.BOOKKEEPING_CONFIG = {
       amount.className = 'row-amount';
       if (status === 'pending') {
         amount.innerHTML = '<span class="pending">计划 ' + fmt(planned) + '</span>';
+      } else if (status === 'partial') {
+        var payCount = expensePaymentCount(item);
+        amount.innerHTML = '<span class="partial-main">' + fmt(remain) + '</span>' +
+          '<span class="sub">计划 ' + fmt(planned) + ' / 部分支出 ' + payCount + '笔</span>';
       } else {
-        amount.innerHTML = '<span class="partial-main">' + fmt(paid) + '</span>' +
-          '<span class="sub">计划 ' + fmt(planned) + ' / 还剩 ' + fmt(remain) + '</span>';
+        amount.innerHTML = fmt(paid) +
+          '<span class="sub">计划 ' + fmt(planned) + ' / 已完成</span>';
       }
 
       li.appendChild(check);
@@ -1443,9 +1448,24 @@ window.BOOKKEEPING_CONFIG = {
   function toggleDone(id) {
     var item = findItem('expenses', id);
     if (!item) return;
-    if (expenseStatus(item) === 'done') return;
     ensurePayments(item);
     var planned = num(item.plannedAmount);
+    if (expenseStatus(item) === 'done') {
+      while (item.payments.length && expensePaid(item) >= planned) {
+        item.payments.pop();
+      }
+      item.done = false;
+      if (!item.payments.length) {
+        delete item.payments;
+        item.actualAmount = '';
+      } else {
+        item.actualAmount = expensePaid(item);
+      }
+      save();
+      render();
+      showToast('已取消完成');
+      return;
+    }
     var paid = expensePaid(item);
     var remainder = Math.max(0, planned - paid);
     if (remainder > 0) {

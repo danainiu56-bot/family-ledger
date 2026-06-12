@@ -107,8 +107,13 @@ class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    root = os.getcwd()
+    if not os.path.isfile(os.path.join(root, 'book.template.html')):
+        sys.stderr.write('Error: 请在 family-ledger 目录运行 dev-server.py\n')
+        sys.exit(1)
     print(f'Static + Proxy server running at http://localhost:{PORT}')
-    print(f'  Static : ./')
+    print(f'  Root   : {root}')
+    print(f'  Preview: http://127.0.0.1:{PORT}/book/  (book.html 同址跳转)')
     print(f'  Proxy  : /prod-api/* → {TARGET}/prod-api/*')
     with ReusableTCPServer(('0.0.0.0', PORT), ProxyHandler) as httpd:
         try:

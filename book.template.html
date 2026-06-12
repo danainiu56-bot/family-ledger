@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="format-detection" content="telephone=no,email=no,address=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="x5-orientation" content="portrait">
+  <meta name="x5-fullscreen" content="true">
+  <meta name="x5-page-mode" content="app">
+  <script>
+    (function () {
+      var host = location.hostname;
+      var base;
+      if (host.indexOf('jsdelivr.net') !== -1) {
+        base = 'https://cdn.jsdelivr.net/gh/danainiu56-bot/family-ledger@main/';
+      } else if (host.indexOf('github.io') !== -1) {
+        base = location.origin + '/family-ledger/';
+      } else {
+        var p = location.pathname;
+        base = location.origin + p.substring(0, p.lastIndexOf('/') + 1);
+      }
+      var el = document.createElement('base');
+      el.href = base;
+      document.head.appendChild(el);
+    })();
+  </script>
+  <title>月度记账本</title>
+  <link rel="stylesheet" href="styles/pages/bookkeeping.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <button class="month-nav" id="prevMonth" aria-label="上个月">&#9664;</button>
+      <button class="month-label" id="monthLabel">2026-06</button>
+      <button class="month-nav" id="nextMonth" aria-label="下个月">&#9654;</button>
+    </header>
+
+    <div class="book-bar" id="bookBar" hidden>
+      <div class="book-info">
+        <span class="book-label">共享账本</span>
+        <span class="book-id" id="bookIdDisplay">—</span>
+      </div>
+      <div class="book-actions">
+        <span class="sync-indicator" id="syncIndicator" title="同步状态">
+          <span class="sync-dot" id="syncDot"></span>
+          <span class="sync-status" id="syncStatusText"></span>
+        </span>
+        <button type="button" class="book-btn" id="shareBookBtn">分享</button>
+        <button type="button" class="book-btn" id="switchBookBtn">切换</button>
+      </div>
+    </div>
+
+    <div class="sync-error" id="syncError" hidden role="alert">
+      <span class="sync-error-msg" id="syncErrorMsg"></span>
+      <button type="button" class="sync-retry-btn" id="syncRetryBtn">重试</button>
+    </div>
+
+    <main class="content">
+      <section class="summary-card" id="summaryCard">
+        <div class="summary-row summary-row-4">
+          <div class="summary-item" id="editBudgetBtn">
+            <span class="summary-label">预算总额</span>
+            <span class="summary-value" id="budgetValue">¥0</span>
+            <span class="summary-hint">点击设置</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">预算支出</span>
+            <span class="summary-value" id="budgetOutValue">¥0</span>
+            <span class="summary-hint">储蓄+开支</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">已支出</span>
+            <span class="summary-value spent" id="actualSpentValue">¥0</span>
+            <span class="summary-hint">完成开支+储蓄</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">还剩</span>
+            <span class="summary-value remain" id="remainValue">¥0</span>
+          </div>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="summary-sub">
+          <span>收入 <b id="incomeTotal">¥0</b></span>
+          <span>储蓄 <b id="savingTotal">¥0</b></span>
+          <span>开支 <b id="plannedTotal">¥0</b></span>
+        </div>
+      </section>
+
+      <section class="group" data-type="income">
+        <div class="group-head">
+          <div class="group-title">
+            <span class="dot dot-income"></span>收入
+            <span class="group-sum" id="incomeSum">¥0</span>
+          </div>
+          <button class="add-btn" data-add="income">+ 添加</button>
+        </div>
+        <ul class="list" id="incomeList"></ul>
+      </section>
+
+      <section class="group" data-type="savings">
+        <div class="group-head">
+          <div class="group-title">
+            <span class="dot dot-saving"></span>储蓄
+            <span class="group-sum" id="savingSum">¥0</span>
+          </div>
+          <button class="add-btn" data-add="savings">+ 添加</button>
+        </div>
+        <ul class="list" id="savingList"></ul>
+      </section>
+
+      <section class="group" data-type="expenses">
+        <div class="group-head">
+          <div class="group-title">
+            <span class="dot dot-expense"></span>开支
+            <span class="group-sum" id="expenseSum">已花 ¥0 / 计划 ¥0</span>
+          </div>
+          <button class="add-btn" data-add="expenses">+ 添加</button>
+        </div>
+        <ul class="list" id="expenseList"></ul>
+      </section>
+    </main>
+  </div>
+
+  <div class="drawer-mask" id="bookMask" hidden></div>
+  <div class="drawer drawer-sm" id="bookDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title">加入共享账本</h3>
+    <p class="drawer-desc">创建新账本或输入他人分享的编号，即可多人同步同一份数据。</p>
+    <form id="bookForm" class="drawer-form">
+      <label class="field">
+        <span class="field-label">账本编号</span>
+        <input type="text" id="fBookId" placeholder="例如：bk_a1b2c3d4" maxlength="32" autocapitalize="off">
+      </label>
+      <div class="drawer-actions drawer-actions-stack">
+        <button type="button" class="btn btn-primary" id="createBookBtn">创建新账本</button>
+        <button type="submit" class="btn btn-cancel">加入已有账本</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="drawer-mask" id="drawerMask" hidden></div>
+  <div class="drawer" id="drawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title" id="drawerTitle">添加</h3>
+    <form id="entryForm" class="drawer-form">
+      <label class="field">
+        <span class="field-label">名称</span>
+        <input type="text" id="fName" placeholder="例如：工资 / 房租" required maxlength="20">
+      </label>
+      <label class="field" data-mode="single">
+        <span class="field-label">金额</span>
+        <input type="text" id="fAmount" inputmode="decimal" placeholder="0.00">
+      </label>
+      <div data-mode="expense" hidden>
+        <label class="field">
+          <span class="field-label">计划金额</span>
+          <input type="text" id="fPlanned" inputmode="decimal" placeholder="0.00">
+        </label>
+        <div class="expense-summary" id="expenseSummary" hidden>
+          <span>已支出 <b id="expensePaidText">¥0</b></span>
+          <span>剩余 <b id="expenseRemainText">¥0</b></span>
+        </div>
+        <label class="field">
+          <span class="field-label">本次支出金额</span>
+          <input type="text" id="fPayment" inputmode="decimal" placeholder="0.00">
+        </label>
+        <p class="field-hint">填写本次实际支付金额，可多次记录部分支出</p>
+      </div>
+      <label class="field">
+        <span class="field-label">日期</span>
+        <input type="date" id="fDate">
+      </label>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-ghost" id="deleteBtn" hidden>删除</button>
+        <button type="button" class="btn btn-cancel" id="cancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="drawer-mask" id="paymentMask" hidden></div>
+  <div class="drawer drawer-sm" id="paymentDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title" id="paymentTitle">记支出</h3>
+    <form id="paymentForm" class="drawer-form">
+      <div class="expense-summary">
+        <span>已支出 <b id="payPaidText">¥0</b></span>
+        <span>剩余 <b id="payRemainText">¥0</b></span>
+      </div>
+      <label class="field">
+        <span class="field-label">本次支出金额</span>
+        <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00">
+      </label>
+      <label class="field">
+        <span class="field-label">日期</span>
+        <input type="date" id="fPayDate">
+      </label>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-cancel" id="paymentCancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">确认</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="drawer-mask" id="shareMask" hidden></div>
+  <div class="drawer drawer-sm" id="shareDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title">分享给家人</h3>
+    <p class="drawer-desc">复制下方文案发给家人，对方打开链接即可加入同一账本。</p>
+    <label class="field">
+      <span class="field-label">分享文案</span>
+      <textarea id="shareLinkText" class="share-text" readonly rows="4"></textarea>
+    </label>
+    <label class="field">
+      <span class="field-label">账本编号</span>
+      <input type="text" id="shareBookIdText" readonly>
+    </label>
+    <div class="drawer-actions drawer-actions-stack">
+      <button type="button" class="btn btn-primary" id="copyShareBtn">复制分享文案</button>
+      <button type="button" class="btn btn-cancel" id="closeShareBtn">关闭</button>
+    </div>
+  </div>
+
+  <div class="drawer-mask" id="budgetMask" hidden></div>
+  <div class="drawer drawer-sm" id="budgetDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title">设置本月预算总额</h3>
+    <form id="budgetForm" class="drawer-form">
+      <label class="field">
+        <span class="field-label">预算总额</span>
+        <input type="text" id="fBudget" inputmode="decimal" placeholder="0.00">
+      </label>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-cancel" id="budgetCancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>
+  <script src="scripts/pages/bookkeeping-config.js"></script>
+  <script src="scripts/pages/bookkeeping.js"></script>
+</body>
+</html>

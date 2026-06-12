@@ -717,9 +717,24 @@
   function toggleDone(id) {
     var item = findItem('expenses', id);
     if (!item) return;
-    if (expenseStatus(item) === 'done') return;
     ensurePayments(item);
     var planned = num(item.plannedAmount);
+    if (expenseStatus(item) === 'done') {
+      while (item.payments.length && expensePaid(item) >= planned) {
+        item.payments.pop();
+      }
+      item.done = false;
+      if (!item.payments.length) {
+        delete item.payments;
+        item.actualAmount = '';
+      } else {
+        item.actualAmount = expensePaid(item);
+      }
+      save();
+      render();
+      showToast('已取消完成');
+      return;
+    }
     var paid = expensePaid(item);
     var remainder = Math.max(0, planned - paid);
     if (remainder > 0) {

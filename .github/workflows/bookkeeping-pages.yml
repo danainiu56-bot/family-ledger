@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'book/**'
+      - 'book.template.html'
       - 'book.html'
       - 'index.html'
       - '记账本.html'

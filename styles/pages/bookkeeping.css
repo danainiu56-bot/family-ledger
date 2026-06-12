@@ -333,6 +333,7 @@ input { font-family: inherit; }
   justify-content: center;
   color: #fff;
   font-size: 13px;
+  cursor: pointer;
   transition: all .15s;
 }
 .row-check.done { background: var(--success); border-color: var(--success); }
