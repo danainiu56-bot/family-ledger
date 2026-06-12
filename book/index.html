@@ -1292,6 +1292,11 @@ window.BOOKKEEPING_CONFIG = {
     item.payments = arr;
     return arr;
   }
+  function expensePaymentCount(item) {
+    if (item.payments && item.payments.length) return item.payments.length;
+    if (item.done && expensePaid(item) > 0) return 1;
+    return 0;
+  }
   function refreshExpenseDone(item) {
     var planned = num(item.plannedAmount);
     item.done = (planned > 0 && expensePaid(item) >= planned);

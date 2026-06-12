@@ -562,6 +562,11 @@
     item.payments = arr;
     return arr;
   }
+  function expensePaymentCount(item) {
+    if (item.payments && item.payments.length) return item.payments.length;
+    if (item.done && expensePaid(item) > 0) return 1;
+    return 0;
+  }
   function refreshExpenseDone(item) {
     var planned = num(item.plannedAmount);
     item.done = (planned > 0 && expensePaid(item) >= planned);
@@ -675,9 +680,13 @@
       amount.className = 'row-amount';
       if (status === 'pending') {
         amount.innerHTML = '<span class="pending">计划 ' + fmt(planned) + '</span>';
+      } else if (status === 'partial') {
+        var payCount = expensePaymentCount(item);
+        amount.innerHTML = '<span class="partial-main">' + fmt(remain) + '</span>' +
+          '<span class="sub">计划 ' + fmt(planned) + ' / 部分支出 ' + payCount + '笔</span>';
       } else {
-        amount.innerHTML = '<span class="partial-main">' + fmt(paid) + '</span>' +
-          '<span class="sub">计划 ' + fmt(planned) + ' / 还剩 ' + fmt(remain) + '</span>';
+        amount.innerHTML = fmt(paid) +
+          '<span class="sub">计划 ' + fmt(planned) + ' / 已完成</span>';
       }
 
       li.appendChild(check);
