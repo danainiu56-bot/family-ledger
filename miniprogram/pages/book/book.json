@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "月度记账本",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "usingComponents": {}
+}

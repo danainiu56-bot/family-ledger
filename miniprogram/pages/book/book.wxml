@@ -1,0 +1,276 @@
+<view class="app">
+  <!-- 顶部月份切换 -->
+  <view class="topbar">
+    <view class="month-nav" bindtap="prevMonth">◀</view>
+    <picker mode="date" fields="month" value="{{monthPickerValue}}" bindchange="onMonthPick">
+      <view class="month-label">{{monthKey}}</view>
+    </picker>
+    <view class="month-nav" bindtap="nextMonth">▶</view>
+  </view>
+
+  <!-- 共享账本栏 -->
+  <view class="book-bar" wx:if="{{cloudEnabled}}">
+    <view class="book-info">
+      <text class="book-label">共享账本</text>
+      <text class="book-id">{{bookId || '未加入'}}</text>
+    </view>
+    <view class="book-actions">
+      <view class="sync-indicator">
+        <view class="sync-dot {{syncStatus}}"></view>
+        <text class="sync-status">{{syncLabel}}</text>
+      </view>
+      <view class="book-btn" bindtap="openShare">分享</view>
+      <view class="book-btn" bindtap="openBookSetup">切换</view>
+    </view>
+  </view>
+
+  <!-- 同步错误条 -->
+  <view class="sync-error" wx:if="{{syncFailed}}">
+    <text class="sync-error-msg">{{syncErrorMsg}}</text>
+    <view class="sync-retry-btn" bindtap="retrySync">重试</view>
+  </view>
+
+  <!-- 内容区 -->
+  <view class="content">
+    <!-- 预算总览卡片 -->
+    <view class="summary-card">
+      <view class="summary-row summary-row-4">
+        <view class="summary-item" bindtap="openBudget">
+          <text class="summary-label">预算总额</text>
+          <text class="summary-value">{{budgetText}}</text>
+          <text class="summary-hint">点击设置</text>
+        </view>
+        <view class="summary-item">
+          <text class="summary-label">预算支出</text>
+          <text class="summary-value">{{budgetOutText}}</text>
+          <text class="summary-hint">储蓄+开支</text>
+        </view>
+        <view class="summary-item">
+          <text class="summary-label">已支出</text>
+          <text class="summary-value">{{actualSpentText}}</text>
+          <text class="summary-hint">完成开支+储蓄</text>
+        </view>
+        <view class="summary-item">
+          <text class="summary-label">还剩</text>
+          <text class="summary-value remain" style="{{remainOver ? 'color:#fecaca' : 'color:#fff'}}">{{remainText}}</text>
+        </view>
+      </view>
+      <view class="progress-track">
+        <view class="progress-fill {{progressOver ? 'over' : ''}}" style="width:{{progressPct}}%"></view>
+      </view>
+      <view class="summary-sub">
+        <text>收入 <text class="b">{{incomeTotalText}}</text></text>
+        <text>储蓄 <text class="b">{{savingTotalText}}</text></text>
+        <text>开支 <text class="b">{{plannedTotalText}}</text></text>
+      </view>
+    </view>
+
+    <!-- 收入 -->
+    <view class="group">
+      <view class="group-head">
+        <view class="group-title">
+          <view class="dot dot-income"></view>收入
+          <text class="group-sum">{{incomeSumText}}</text>
+        </view>
+        <view class="add-btn" data-type="income" bindtap="openAdd">+ 添加</view>
+      </view>
+      <view class="list">
+        <view wx:if="{{incomeRows.length === 0}}" class="empty">暂无记录，点击右上角添加</view>
+        <view wx:for="{{incomeRows}}" wx:key="id" class="row" data-type="income" data-id="{{item.id}}" bindtap="openEdit">
+          <view class="row-main">
+            <view class="row-name">{{item.name}}</view>
+            <view class="row-meta">{{item.date}}</view>
+          </view>
+          <view class="row-amount income">{{item.amountText}}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 储蓄 -->
+    <view class="group">
+      <view class="group-head">
+        <view class="group-title">
+          <view class="dot dot-saving"></view>储蓄
+          <text class="group-sum">{{savingSumText}}</text>
+        </view>
+        <view class="add-btn" data-type="savings" bindtap="openAdd">+ 添加</view>
+      </view>
+      <view class="list">
+        <view wx:if="{{savingRows.length === 0}}" class="empty">暂无记录，点击右上角添加</view>
+        <view wx:for="{{savingRows}}" wx:key="id" class="row" data-type="savings" data-id="{{item.id}}" bindtap="openEdit">
+          <view class="row-main">
+            <view class="row-name">{{item.name}}</view>
+            <view class="row-meta">{{item.date}}</view>
+          </view>
+          <view class="row-amount saving">{{item.amountText}}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 开支 -->
+    <view class="group group-expenses">
+      <view class="group-head">
+        <view class="group-title">
+          <view class="dot dot-expense"></view>开支
+          <text class="group-sum">{{expenseSumText}}</text>
+        </view>
+        <view class="add-btn" data-type="expenses" bindtap="openAdd">+ 添加</view>
+      </view>
+      <view class="list">
+        <view wx:if="{{expenseRows.length === 0}}" class="empty">暂无记录，点击右上角添加</view>
+        <view wx:for="{{expenseRows}}" wx:key="id" class="row" data-id="{{item.id}}" bindtap="openEditExpense">
+          <view class="row-check {{item.checkClass}}" catchtap="toggleDone" data-id="{{item.id}}">{{item.checkText}}</view>
+          <view class="row-main">
+            <view class="row-name {{item.nameDone ? 'done' : ''}}">{{item.name}}</view>
+            <view class="row-meta">{{item.metaText}}</view>
+          </view>
+          <view wx:if="{{item.showPay}}" class="row-pay-btn" catchtap="openPayment" data-id="{{item.id}}">记支出</view>
+          <view class="row-amount">
+            <view class="{{item.amtClass}}">{{item.mainText}}</view>
+            <view wx:if="{{item.subText}}" class="sub">{{item.subText}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- ============ 弹层 ============ -->
+
+<!-- 添加/编辑明细 -->
+<view wx:if="{{drawerEntry}}">
+  <view class="drawer-mask" bindtap="closeDrawers"></view>
+  <view class="drawer" catchtap="noop">
+    <view class="drawer-handle"></view>
+    <view class="drawer-title">{{entryTitle}}</view>
+    <view class="drawer-form">
+      <view class="field">
+        <text class="field-label">名称</text>
+        <input class="input" type="text" maxlength="20" value="{{f.name}}" placeholder="例如：工资 / 房租" data-k="name" bindinput="onInput" />
+      </view>
+
+      <view wx:if="{{!entryIsExpense}}" class="field">
+        <text class="field-label">金额</text>
+        <input class="input" type="digit" value="{{f.amount}}" placeholder="0.00" data-k="amount" bindinput="onInput" />
+      </view>
+
+      <block wx:if="{{entryIsExpense}}">
+        <view class="field">
+          <text class="field-label">计划金额</text>
+          <input class="input" type="digit" value="{{f.planned}}" placeholder="0.00" data-k="planned" bindinput="onInput" />
+        </view>
+        <view wx:if="{{entryEditing}}" class="expense-summary">
+          <text>已支出 <text class="b">{{entryPaidText}}</text></text>
+          <text>剩余 <text class="b">{{entryRemainText}}</text></text>
+        </view>
+        <view class="field">
+          <text class="field-label">本次支出金额</text>
+          <input class="input" type="digit" value="{{f.payment}}" placeholder="0.00" data-k="payment" bindinput="onInput" />
+        </view>
+        <text class="field-hint">填写本次实际支付金额，可多次记录部分支出</text>
+      </block>
+
+      <view class="field">
+        <text class="field-label">日期</text>
+        <picker mode="date" value="{{f.date}}" bindchange="onDatePick">
+          <view class="input picker-input">{{f.date}}</view>
+        </picker>
+      </view>
+
+      <view class="drawer-actions">
+        <view wx:if="{{entryEditing}}" class="btn btn-ghost" bindtap="deleteEntry">删除</view>
+        <view class="btn btn-cancel" bindtap="closeDrawers">取消</view>
+        <view class="btn btn-primary" bindtap="submitEntry">保存</view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- 记支出 -->
+<view wx:if="{{drawerPayment}}">
+  <view class="drawer-mask" bindtap="closePayment"></view>
+  <view class="drawer" catchtap="noop">
+    <view class="drawer-handle"></view>
+    <view class="drawer-title">{{payTitle}}</view>
+    <view class="drawer-form">
+      <view class="expense-summary">
+        <text>已支出 <text class="b">{{payPaidText}}</text></text>
+        <text>剩余 <text class="b">{{payRemainText}}</text></text>
+      </view>
+      <view class="field">
+        <text class="field-label">本次支出金额</text>
+        <input class="input" type="digit" value="{{pay.amount}}" placeholder="0.00" data-k="payAmount" bindinput="onInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">日期</text>
+        <picker mode="date" value="{{pay.date}}" bindchange="onPayDatePick">
+          <view class="input picker-input">{{pay.date}}</view>
+        </picker>
+      </view>
+      <view class="drawer-actions">
+        <view class="btn btn-cancel" bindtap="closePayment">取消</view>
+        <view class="btn btn-primary" bindtap="submitPayment">确认</view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- 预算 -->
+<view wx:if="{{drawerBudget}}">
+  <view class="drawer-mask" bindtap="closeDrawers"></view>
+  <view class="drawer" catchtap="noop">
+    <view class="drawer-handle"></view>
+    <view class="drawer-title">设置本月预算总额</view>
+    <view class="drawer-form">
+      <view class="field">
+        <text class="field-label">预算总额</text>
+        <input class="input" type="digit" value="{{budgetInput}}" placeholder="0.00" data-k="budget" bindinput="onInput" />
+      </view>
+      <view class="drawer-actions">
+        <view class="btn btn-cancel" bindtap="closeDrawers">取消</view>
+        <view class="btn btn-primary" bindtap="submitBudget">保存</view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- 账本设置 -->
+<view wx:if="{{drawerBook}}">
+  <view class="drawer-mask" bindtap="closeBookSetup"></view>
+  <view class="drawer" catchtap="noop">
+    <view class="drawer-handle"></view>
+    <view class="drawer-title">加入共享账本</view>
+    <view class="drawer-desc">创建新账本或输入他人分享的编号，即可多人同步同一份数据。</view>
+    <view class="drawer-form">
+      <view class="field">
+        <text class="field-label">账本编号</text>
+        <input class="input" type="text" maxlength="32" value="{{bookInput}}" placeholder="例如：bk_a1b2c3d4" data-k="book" bindinput="onInput" />
+      </view>
+      <view class="drawer-actions drawer-actions-stack">
+        <view class="btn btn-primary" bindtap="createBook">创建新账本</view>
+        <view class="btn btn-cancel" bindtap="joinBookByInput">加入已有账本</view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- 分享 -->
+<view wx:if="{{drawerShare}}">
+  <view class="drawer-mask" bindtap="closeShare"></view>
+  <view class="drawer" catchtap="noop">
+    <view class="drawer-handle"></view>
+    <view class="drawer-title">分享给家人</view>
+    <view class="drawer-desc">把账本编号发给家人，对方在小程序里「切换」并输入该编号即可加入同一账本；也可点右上角转发小程序。</view>
+    <view class="drawer-form">
+      <view class="field">
+        <text class="field-label">账本编号</text>
+        <view class="input picker-input">{{bookId}}</view>
+      </view>
+      <view class="drawer-actions drawer-actions-stack">
+        <button class="btn btn-primary" open-type="share">转发给家人</button>
+        <view class="btn btn-cancel" bindtap="copyBookId">复制账本编号</view>
+        <view class="btn btn-cancel" bindtap="closeShare">关闭</view>
+      </view>
+    </view>
+  </view>
+</view>

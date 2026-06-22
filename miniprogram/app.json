@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/book/book"
+  ],
+  "window": {
+    "navigationBarTitleText": "月度记账本",
+    "navigationBarBackgroundColor": "#6366f1",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f1f5f9",
+    "backgroundColorTop": "#6366f1"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
