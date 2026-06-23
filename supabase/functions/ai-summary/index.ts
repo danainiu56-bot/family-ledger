@@ -75,7 +75,11 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "仅支持 POST" }, 405);
 
-  const apiKey = Deno.env.get("ZHIPU_API_KEY");
+  const apiKey = (Deno.env.get("ZHIPU_API_KEY") || "")
+    .trim()
+    .replace(/^Bearer\s+/i, "")
+    .replace(/^["']|["']$/g, "")
+    .replace(/[^\x21-\x7E]/g, "");
   if (!apiKey) return json({ error: "服务端未配置 ZHIPU_API_KEY" }, 500);
 
   let payload: { monthKey?: string; overview?: Overview };
