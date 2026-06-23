@@ -700,7 +700,7 @@
     '[开支概览] 用一两句话总结这个月钱主要花在哪、收支结构是否健康。\n' +
     '[可优化项] 结合开支明细和备注，指出可能不必要或偏高的开支，给出2-3条具体、可执行的省钱建议；如果开支都合理，就如实说明，不要硬找问题。\n' +
     '[下月预算建议] 基于本月情况，给出下个月主要开支项的预算参考或一个总预算区间，帮助用户做预算判断。\n' +
-    '语气自然、不说教，不要编造数据中没有的信息，不要使用多余的 Markdown 符号。';
+    '语气自然、不说教，不要编造数据中没有的信息。可以用 Markdown：重点数字或关键词用 **加粗**，多条建议用「- 」开头的列表，让结构更清晰。';
   function buildAiPrompt(key, ov) {
     var lines = [];
     lines.push('统计周期：' + key + '（每月10号到次月10号为一个账单周期）');
@@ -768,10 +768,91 @@
       });
     }).finally(function () { if (timer) clearTimeout(timer); });
   }
+  function aiInlineMd(s) {
+    return s
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  }
+  function aiMdToHtml(text) {
+    var safe = escapeHtml(String(text || ''));
+    var lines = safe.split(/\r?\n/);
+    var html = '', listOpen = false;
+    function closeList() { if (listOpen) { html += '</ul>'; listOpen = false; } }
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i].trim();
+      if (!ln) { closeList(); continue; }
+      var li = ln.match(/^[-*]\s+(.*)$/) || ln.match(/^\d+[.、)]\s+(.*)$/);
+      if (li) {
+        if (!listOpen) { html += '<ul class="ai-list">'; listOpen = true; }
+        html += '<li>' + aiInlineMd(li[1]) + '</li>';
+        continue;
+      }
+      closeList();
+      ln = ln.replace(/^#{1,6}\s+/, '');
+      ln = ln.replace(/^\[([^\]]+)\]/, '<strong class="ai-h">$1</strong>');
+      html += '<p>' + aiInlineMd(ln) + '</p>';
+    }
+    closeList();
+    return html;
+  }
+  function streamAiSummaryH5(key, ov, onDelta) {
+    var c = getConfig();
+    if (!c.zhipuApiKey || typeof ReadableStream === 'undefined') {
+      return fetchAiSummaryH5(key, ov).then(function (r) { return r.advice; });
+    }
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 45000) : null;
+    return fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.zhipuApiKey },
+      body: JSON.stringify({
+        model: c.zhipuModel || 'glm-4-flash',
+        messages: [{ role: 'system', content: AI_SYSTEM_PROMPT }, { role: 'user', content: buildAiPrompt(key, ov) }],
+        temperature: 0.6, max_tokens: 800, stream: true
+      }),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (res) {
+      if (!res.ok || !res.body) {
+        return res.json().catch(function () { return null; }).then(function (d) {
+          throw new Error((d && d.error && d.error.message) || ('HTTP ' + res.status));
+        });
+      }
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder('utf-8');
+      var full = '', buf = '';
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) return full;
+          buf += decoder.decode(r.value, { stream: true });
+          var parts = buf.split('\n');
+          buf = parts.pop();
+          for (var i = 0; i < parts.length; i++) {
+            var line = parts[i].trim();
+            if (!line || line.indexOf('data:') !== 0) continue;
+            var payload = line.slice(5).trim();
+            if (payload === '[DONE]') continue;
+            try {
+              var j = JSON.parse(payload);
+              var delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+              if (delta) { full += delta; if (onDelta) onDelta(full); }
+            } catch (e) {}
+          }
+          return pump();
+        });
+      }
+      return pump();
+    }).finally(function () { if (timer) clearTimeout(timer); });
+  }
+  function renderAiStreaming(text) {
+    var sec = document.querySelector('.ai-section');
+    if (!sec) return;
+    sec.innerHTML = '<div class="dash-title">AI 开支建议 <span class="dash-sub">GLM-4-Flash</span></div>' +
+      '<div class="ai-advice">' + aiMdToHtml(text) + '<span class="ai-caret"></span></div>';
+  }
   function aiCardHtml(ov, key) {
     var fp = aiFingerprint(ov);
     var s;
-    if (aiState.key === key && (aiState.state === 'loading' || aiState.state === 'done' || aiState.state === 'error')) {
+    if (aiState.key === key && (aiState.state === 'loading' || aiState.state === 'streaming' || aiState.state === 'done' || aiState.state === 'error')) {
       s = aiState;
     } else {
       var cache = aiGetCache(key);
@@ -789,8 +870,10 @@
         '<div class="ai-tip">根据本月开支明细，帮你分析可优化的开支并给出下月预算参考</div>';
     } else if (s.state === 'loading') {
       inner = '<div class="ai-loading"><i class="ai-spinner"></i><span>AI 正在分析本月开支…</span></div>';
+    } else if (s.state === 'streaming') {
+      inner = '<div class="ai-advice">' + aiMdToHtml(s.advice) + '<span class="ai-caret"></span></div>';
     } else if (s.state === 'done') {
-      inner = '<div class="ai-advice">' + escapeHtml(s.advice) + '</div>' +
+      inner = '<div class="ai-advice">' + aiMdToHtml(s.advice) + '</div>' +
         '<div class="ai-foot"><span class="ai-time">' + (s.cached ? '上次生成 ' : '生成于 ') + escapeHtml(s.time) + '</span>' +
         '<span class="ai-regen" id="aiRegen">重新生成</span></div>';
     } else {
@@ -819,10 +902,15 @@
     }
     aiState = { key: key, state: 'loading', advice: '', error: '', time: '', cached: false, stale: false };
     renderDashboard();
-    fetchAiSummaryH5(key, ov).then(function (res) {
-      var time = aiTimeText(res.generatedAt);
-      aiSetCache(key, { advice: res.advice, fingerprint: fp, time: time });
-      aiState = { key: key, state: 'done', advice: res.advice, error: '', time: time, cached: false, stale: false };
+    streamAiSummaryH5(key, ov, function (partial) {
+      aiState = { key: key, state: 'streaming', advice: partial, error: '', time: '', cached: false, stale: false };
+      renderAiStreaming(partial);
+    }).then(function (advice) {
+      advice = (typeof advice === 'string' ? advice : (advice && advice.advice) || '').trim();
+      if (!advice) throw new Error('AI 未返回内容');
+      var time = aiTimeText(new Date().toISOString());
+      aiSetCache(key, { advice: advice, fingerprint: fp, time: time });
+      aiState = { key: key, state: 'done', advice: advice, error: '', time: time, cached: false, stale: false };
       renderDashboard();
     }).catch(function (err) {
       var msg = (err && err.message) || '生成失败，请重试';
