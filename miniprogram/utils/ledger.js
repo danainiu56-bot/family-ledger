@@ -340,10 +340,12 @@ function setAiCache(bookId, key, obj) {
 }
 function fetchAiSummary(key, ov) {
   return new Promise(function (resolve, reject) {
+    var url = config.aiSummaryUrl || (config.supabaseUrl + '/functions/v1/ai-summary');
+    var header = config.aiSummaryUrl ? { 'Content-Type': 'application/json' } : headers();
     wx.request({
-      url: config.supabaseUrl + '/functions/v1/ai-summary',
+      url: url,
       method: 'POST',
-      header: headers(),
+      header: header,
       data: { monthKey: key, overview: ov },
       success: function (res) {
         if (res.statusCode >= 200 && res.statusCode < 300 && res.data && res.data.advice) {

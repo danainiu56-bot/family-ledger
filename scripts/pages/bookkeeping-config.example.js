@@ -6,5 +6,6 @@
  */
 window.BOOKKEEPING_CONFIG = {
   supabaseUrl: '',
-  supabaseAnonKey: ''
+  supabaseAnonKey: '',
+  aiSummaryUrl: ''
 };

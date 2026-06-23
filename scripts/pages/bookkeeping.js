@@ -696,9 +696,12 @@
   }
   function fetchAiSummaryH5(key, ov) {
     var c = getConfig();
-    return fetch(c.supabaseUrl + '/functions/v1/ai-summary', {
+    var url = c.aiSummaryUrl || (c.supabaseUrl + '/functions/v1/ai-summary');
+    var customAiUrl = !!c.aiSummaryUrl;
+    var headers = customAiUrl ? { 'Content-Type': 'application/json' } : supabaseHeaders();
+    return fetch(url, {
       method: 'POST',
-      headers: supabaseHeaders(),
+      headers: headers,
       body: JSON.stringify({ monthKey: key, overview: ov })
     }).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (data) {

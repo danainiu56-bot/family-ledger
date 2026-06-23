@@ -7,5 +7,6 @@
  */
 module.exports = {
   supabaseUrl: '',
-  supabaseAnonKey: ''
+  supabaseAnonKey: '',
+  aiSummaryUrl: ''
 };

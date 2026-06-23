@@ -4,5 +4,7 @@
  */
 window.BOOKKEEPING_CONFIG = {
   supabaseUrl: 'https://kjasiqqtihagwsnthbvc.supabase.co',
-  supabaseAnonKey: 'sb_publishable_Cft7P8JHV2P08jHc2BP9Nw_fLptoQJ3'
+  supabaseAnonKey: 'sb_publishable_Cft7P8JHV2P08jHc2BP9Nw_fLptoQJ3',
+  // Cloudflare Worker AI 代理（独立于 Supabase）
+  aiSummaryUrl: 'https://family-ledger-ai.danainiu56.workers.dev'
 };
