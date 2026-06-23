@@ -1,0 +1,97 @@
+<view class="dash">
+  <view wx:if="{{!hasBook}}" class="no-book">
+    <view class="no-book-title">还没有账本</view>
+    <view class="no-book-desc">先到「计划」页创建或加入一个账本，首页就会展示月度与年度复盘数据。</view>
+    <button class="no-book-btn" bindtap="goPlan">前往计划页</button>
+  </view>
+
+  <block wx:else>
+    <view class="topbar">
+      <view class="month-nav" bindtap="prevMonth">‹</view>
+      <view class="month-label">{{monthLabel}}</view>
+      <view class="month-nav" bindtap="nextMonth">›</view>
+    </view>
+
+    <view class="dash-body">
+      <view class="card">
+        <view class="card-title">本月复盘 <text class="sub">{{monthLabel}}</text></view>
+        <view class="stats">
+          <view class="stat"><view class="label">收入</view><view class="value income">{{mo.income}}</view></view>
+          <view class="stat"><view class="label">储蓄</view><view class="value saving">{{mo.saving}}</view></view>
+          <view class="stat"><view class="label">已花开支</view><view class="value expense">{{mo.spent}}</view></view>
+          <view class="stat"><view class="label">结余</view><view class="value {{mo.balanceNeg ? 'neg' : ''}}">{{mo.balance}}</view></view>
+        </view>
+        <view class="progress">
+          <view class="progress-head"><text>预算执行</text><text>{{mo.actualSpent}} / {{mo.budgetText}}</text></view>
+          <view class="track"><view class="fill {{mo.execOver ? 'over' : ''}}" style="width:{{mo.execPct}}%"></view></view>
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="card-title">本月开支占比</view>
+        <block wx:if="{{mo.ranked.length}}">
+          <view class="rank-row" wx:for="{{mo.ranked}}" wx:key="name">
+            <view class="rank-head">
+              <text class="rank-name">{{item.name}}</text>
+              <text>{{item.amount}} <text class="pct">{{item.pct}}%</text></text>
+            </view>
+            <view class="rank-bar">
+              <view class="rank-fill-seg" style="width:{{item.barPct}}%">
+                <block wx:if="{{item.detail}}">
+                  <view class="seg" wx:for="{{item.segs}}" wx:for-item="seg" wx:key="label" style="width:{{seg.width}}%;background:{{seg.color}}"></view>
+                </block>
+                <view wx:else class="seg seg-solid"></view>
+              </view>
+            </view>
+            <view wx:if="{{item.detail}}" class="rank-segs">
+              <text class="seg-chip" wx:for="{{item.segs}}" wx:for-item="seg" wx:key="label">
+                <text class="seg-dot" style="background:{{seg.color}}"></text>{{seg.label}} {{seg.amount}}
+              </text>
+            </view>
+          </view>
+        </block>
+        <view wx:else class="empty">本月暂无开支记录</view>
+      </view>
+
+      <view class="card">
+        <view class="card-title">年度复盘 <text class="sub">{{year}}</text></view>
+        <view class="year-chart">
+          <view class="year-col" wx:for="{{yr.cols}}" wx:key="mo">
+            <view class="year-bars">
+              <view class="bar b-income" style="height:{{item.incomeH}}%"></view>
+              <view class="bar b-saving" style="height:{{item.savingH}}%"></view>
+              <view class="bar b-expense" style="height:{{item.expenseH}}%"></view>
+            </view>
+            <view class="m">{{item.mo}}</view>
+          </view>
+        </view>
+        <view class="legend">
+          <text class="lg"><text class="dot b-income"></text>收入</text>
+          <text class="lg"><text class="dot b-saving"></text>储蓄</text>
+          <text class="lg"><text class="dot b-expense"></text>开支</text>
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="card-title">年度汇总 <text class="sub">{{yr.activeMonths}} 个月有记录</text></view>
+        <view class="stats">
+          <view class="stat"><view class="label">总收入</view><view class="value income">{{yr.totalIncome}}</view></view>
+          <view class="stat"><view class="label">总储蓄</view><view class="value saving">{{yr.totalSaving}}</view></view>
+          <view class="stat"><view class="label">总开支</view><view class="value expense">{{yr.totalExpense}}</view></view>
+          <view class="stat"><view class="label">月均开支</view><view class="value">{{yr.avgExpense}}</view></view>
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="card-title">储蓄率 <text class="sub">年度 {{yr.yearRate}}%</text></view>
+        <block wx:if="{{yr.rateRows.length}}">
+          <view class="rank-row" wx:for="{{yr.rateRows}}" wx:key="mo">
+            <view class="rank-head"><text>{{item.mo}} 月</text><text class="pct">{{item.rate}}%</text></view>
+            <view class="rank-bar"><view class="rank-fill saving" style="width:{{item.rateW}}%"></view></view>
+          </view>
+        </block>
+        <view wx:else class="empty">暂无收入记录</view>
+      </view>
+    </view>
+  </block>
+</view>

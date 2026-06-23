@@ -43,6 +43,7 @@ input { font-family: inherit; }
   max-width: 560px;
   margin: 0 auto;
   min-height: 100vh;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 64px);
 }
 
 /* ---------- 顶部月份切换 ---------- */
@@ -355,6 +356,15 @@ input { font-family: inherit; }
 }
 .row-name.done { color: var(--text-muted); text-decoration: line-through; }
 .row-meta { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+.row-notes {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .row-amount {
   text-align: right;
   font-weight: 700;
@@ -484,3 +494,201 @@ input { font-family: inherit; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* ---------- 底部 Tab ---------- */
+.tabbar {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 560px;
+  z-index: 20;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.05);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 56px;
+  color: var(--text-light);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tab-item.active { color: var(--primary); }
+.tab-ico { display: block; }
+
+/* ---------- 数据看板 ---------- */
+.dash-view { display: block; }
+.dash-section {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.dash-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dash-title .dash-sub { font-size: 12px; font-weight: 500; color: var(--text-light); }
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.dash-stat {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.dash-stat .label { font-size: 12px; color: var(--text-muted); }
+.dash-stat .value { font-size: 19px; font-weight: 700; margin-top: 4px; }
+.dash-stat .value.income { color: var(--income); }
+.dash-stat .value.saving { color: var(--saving); }
+.dash-stat .value.expense { color: var(--expense); }
+.dash-stat .value.neg { color: var(--danger); }
+
+.dash-progress {
+  margin-top: 14px;
+}
+.dash-progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.dash-track {
+  height: 10px;
+  border-radius: 6px;
+  background: var(--border);
+  overflow: hidden;
+}
+.dash-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: var(--primary);
+  transition: width .3s;
+}
+.dash-fill.over { background: var(--danger); }
+
+/* 横条排行 */
+.rank-row { margin-bottom: 12px; }
+.rank-row:last-child { margin-bottom: 0; }
+.rank-row-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+.rank-row-head .pct { color: var(--text-light); font-size: 12px; }
+.rank-bar {
+  height: 8px;
+  border-radius: 5px;
+  background: var(--border);
+  overflow: hidden;
+}
+.rank-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--expense);
+}
+.rank-fill-seg {
+  display: flex;
+  height: 100%;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.rank-fill-seg > i {
+  display: block;
+  height: 100%;
+}
+.rank-segs {
+  margin-top: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.seg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.seg-chip > i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+/* 年度柱状图 */
+.year-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 140px;
+  padding-top: 8px;
+}
+.year-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.year-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 100%;
+  width: 100%;
+  justify-content: center;
+}
+.year-bars > i {
+  width: 5px;
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+}
+.year-bars > i.b-income { background: var(--income); }
+.year-bars > i.b-saving { background: var(--saving); }
+.year-bars > i.b-expense { background: var(--expense); }
+.year-col .m { font-size: 10px; color: var(--text-light); }
+.year-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.year-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.year-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.year-legend i.b-income { background: var(--income); }
+.year-legend i.b-saving { background: var(--saving); }
+.year-legend i.b-expense { background: var(--expense); }
+
+.dash-empty {
+  text-align: center;
+  color: var(--text-light);
+  font-size: 13px;
+  padding: 18px 0;
+}

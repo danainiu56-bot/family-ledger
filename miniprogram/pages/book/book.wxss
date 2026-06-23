@@ -260,6 +260,15 @@
 }
 .row-name.done { color: var(--text-muted); text-decoration: line-through; }
 .row-meta { font-size: 24rpx; color: var(--text-light); margin-top: 4rpx; }
+.row-notes {
+  font-size: 24rpx;
+  color: var(--text-muted);
+  margin-top: 6rpx;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .row-amount {
   text-align: right;
   font-weight: 700;

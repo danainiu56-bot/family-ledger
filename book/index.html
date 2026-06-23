@@ -57,6 +57,7 @@ input { font-family: inherit; }
   max-width: 560px;
   margin: 0 auto;
   min-height: 100vh;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 64px);
 }
 
 /* ---------- 顶部月份切换 ---------- */
@@ -369,6 +370,15 @@ input { font-family: inherit; }
 }
 .row-name.done { color: var(--text-muted); text-decoration: line-through; }
 .row-meta { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+.row-notes {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .row-amount {
   text-align: right;
   font-weight: 700;
@@ -499,6 +509,204 @@ input { font-family: inherit; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
+/* ---------- 底部 Tab ---------- */
+.tabbar {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 560px;
+  z-index: 20;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.05);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 56px;
+  color: var(--text-light);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tab-item.active { color: var(--primary); }
+.tab-ico { display: block; }
+
+/* ---------- 数据看板 ---------- */
+.dash-view { display: block; }
+.dash-section {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.dash-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dash-title .dash-sub { font-size: 12px; font-weight: 500; color: var(--text-light); }
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.dash-stat {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.dash-stat .label { font-size: 12px; color: var(--text-muted); }
+.dash-stat .value { font-size: 19px; font-weight: 700; margin-top: 4px; }
+.dash-stat .value.income { color: var(--income); }
+.dash-stat .value.saving { color: var(--saving); }
+.dash-stat .value.expense { color: var(--expense); }
+.dash-stat .value.neg { color: var(--danger); }
+
+.dash-progress {
+  margin-top: 14px;
+}
+.dash-progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.dash-track {
+  height: 10px;
+  border-radius: 6px;
+  background: var(--border);
+  overflow: hidden;
+}
+.dash-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: var(--primary);
+  transition: width .3s;
+}
+.dash-fill.over { background: var(--danger); }
+
+/* 横条排行 */
+.rank-row { margin-bottom: 12px; }
+.rank-row:last-child { margin-bottom: 0; }
+.rank-row-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+.rank-row-head .pct { color: var(--text-light); font-size: 12px; }
+.rank-bar {
+  height: 8px;
+  border-radius: 5px;
+  background: var(--border);
+  overflow: hidden;
+}
+.rank-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--expense);
+}
+.rank-fill-seg {
+  display: flex;
+  height: 100%;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.rank-fill-seg > i {
+  display: block;
+  height: 100%;
+}
+.rank-segs {
+  margin-top: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.seg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.seg-chip > i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+/* 年度柱状图 */
+.year-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 140px;
+  padding-top: 8px;
+}
+.year-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.year-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 100%;
+  width: 100%;
+  justify-content: center;
+}
+.year-bars > i {
+  width: 5px;
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+}
+.year-bars > i.b-income { background: var(--income); }
+.year-bars > i.b-saving { background: var(--saving); }
+.year-bars > i.b-expense { background: var(--expense); }
+.year-col .m { font-size: 10px; color: var(--text-light); }
+.year-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.year-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.year-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.year-legend i.b-income { background: var(--income); }
+.year-legend i.b-saving { background: var(--saving); }
+.year-legend i.b-expense { background: var(--expense); }
+
+.dash-empty {
+  text-align: center;
+  color: var(--text-light);
+  font-size: 13px;
+  padding: 18px 0;
+}
+
   </style>
 </head>
 <body>
@@ -529,7 +737,7 @@ input { font-family: inherit; }
       <button type="button" class="sync-retry-btn" id="syncRetryBtn">重试</button>
     </div>
 
-    <main class="content">
+    <main class="content" id="planView">
       <section class="summary-card" id="summaryCard">
         <div class="summary-row summary-row-4">
           <div class="summary-item" id="editBudgetBtn">
@@ -595,6 +803,25 @@ input { font-family: inherit; }
         <ul class="list" id="expenseList"></ul>
       </section>
     </main>
+
+    <main class="content dash-view" id="dashView" hidden></main>
+
+    <nav class="tabbar" id="tabbar">
+      <button type="button" class="tab-item active" data-tab="home" aria-label="首页">
+        <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M3 11l9-8 9 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M5 10v10h14V10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="tab-text">首页</span>
+      </button>
+      <button type="button" class="tab-item" data-tab="plan" aria-label="计划">
+        <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M6 3h9l5 5v13H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M9 12h7M9 16h7M9 8h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="tab-text">计划</span>
+      </button>
+    </nav>
   </div>
 
   <div class="drawer-mask" id="bookMask" hidden></div>
@@ -666,6 +893,10 @@ input { font-family: inherit; }
       <label class="field">
         <span class="field-label">本次支出金额</span>
         <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00">
+      </label>
+      <label class="field">
+        <span class="field-label">备注</span>
+        <input type="text" id="fPayNote" maxlength="40" placeholder="选填，如：超市买菜">
       </label>
       <label class="field">
         <span class="field-label">日期</span>
@@ -756,6 +987,18 @@ window.BOOKKEEPING_CONFIG = {
   }
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
   function monthKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
+  var CYCLE_START_DAY = 10;
+  function cycleAnchor(d) {
+    var y = d.getFullYear();
+    var mo = d.getMonth();
+    if (d.getDate() < CYCLE_START_DAY) mo -= 1;
+    return new Date(y, mo, 1);
+  }
+  function cycleRangeText(d) {
+    var start = new Date(d.getFullYear(), d.getMonth(), 1);
+    var end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return (start.getMonth() + 1) + '/' + CYCLE_START_DAY + ' - ' + (end.getMonth() + 1) + '/' + CYCLE_START_DAY;
+  }
   function todayISO() {
     var d = new Date();
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
@@ -1252,7 +1495,8 @@ window.BOOKKEEPING_CONFIG = {
     bookId: '',
     syncFailed: false,
     realtimeReady: false,
-    payingExpenseId: null
+    payingExpenseId: null,
+    activeTab: 'home'
   };
 
   /* ---------- 计算 ---------- */
@@ -1297,6 +1541,15 @@ window.BOOKKEEPING_CONFIG = {
     if (item.payments && item.payments.length) return item.payments.length;
     if (item.done && expensePaid(item) > 0) return 1;
     return 0;
+  }
+  function paymentNotesSummary(item) {
+    if (!item.payments || !item.payments.length) return '';
+    var notes = [];
+    for (var i = 0; i < item.payments.length; i++) {
+      var n = (item.payments[i].note || '').trim();
+      if (n) notes.push(n);
+    }
+    return notes.join('、');
   }
   function refreshExpenseDone(item) {
     var planned = num(item.plannedAmount);
@@ -1346,11 +1599,184 @@ window.BOOKKEEPING_CONFIG = {
     state.data.budgetByMonth[key] = sum(m.income, 'amount');
   }
 
+  /* ---------- Tab 与数据看板 ---------- */
+  function setTab(tab) {
+    state.activeTab = tab;
+    $('planView').hidden = tab !== 'plan';
+    $('dashView').hidden = tab !== 'home';
+    var items = document.querySelectorAll('.tab-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.toggle('active', items[i].getAttribute('data-tab') === tab);
+    }
+    if (tab === 'home') renderDashboard();
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  function pct(part, whole) {
+    return whole > 0 ? Math.round((part / whole) * 100) : 0;
+  }
+  function monthDataReadonly(key) {
+    return state.data.months[key] || { income: [], savings: [], expenses: [] };
+  }
+
+  function renderDashboard() {
+    var view = $('dashView');
+    if (!view) return;
+    var key = monthKey(state.current);
+    var year = state.current.getFullYear();
+    var m = monthDataReadonly(key);
+
+    var income = sum(m.income, 'amount');
+    var saving = sum(m.savings, 'amount');
+    var spent = completedExpenseTotal(m.expenses);
+    var budget = num(state.data.budgetByMonth[key]);
+    var actualSpent = saving + spent;
+    var balance = income - actualSpent;
+    var execPct = budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0;
+    var execOver = budget > 0 && actualSpent > budget;
+
+    var html = '';
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">本月复盘 <span class="dash-sub">' + escapeHtml(cycleRangeText(state.current)) + '</span></div>' +
+      '<div class="dash-stats">' +
+        statCard('收入', income, 'income') +
+        statCard('储蓄', saving, 'saving') +
+        statCard('已花开支', spent, 'expense') +
+        statCard('结余', balance, balance < 0 ? 'neg' : '') +
+      '</div>' +
+      '<div class="dash-progress">' +
+        '<div class="dash-progress-head"><span>预算执行</span><span>' +
+          fmt(actualSpent) + ' / ' + (budget > 0 ? fmt(budget) : '未设预算') + '</span></div>' +
+        '<div class="dash-track"><div class="dash-fill' + (execOver ? ' over' : '') +
+          '" style="width:' + execPct + '%"></div></div>' +
+      '</div>' +
+    '</section>';
+
+    var ranked = [];
+    for (var i = 0; i < m.expenses.length; i++) {
+      var ex = m.expenses[i];
+      var paid = expensePaid(ex);
+      if (paid <= 0) continue;
+      var segs = [];
+      if (ex.payments && ex.payments.length) {
+        for (var pi = 0; pi < ex.payments.length; pi++) {
+          var amt = num(ex.payments[pi].amount);
+          if (amt > 0) segs.push({ label: (ex.payments[pi].note || '').trim(), amount: amt });
+        }
+      }
+      ranked.push({ name: ex.name, paid: paid, segments: segs });
+    }
+    ranked.sort(function (a, b) { return b.paid - a.paid; });
+    var maxPaid = ranked.length ? ranked[0].paid : 0;
+    var SEG_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#14b8a6', '#ef4444', '#0ea5e9'];
+    var rankHtml = '';
+    if (ranked.length) {
+      for (var r = 0; r < Math.min(ranked.length, 8); r++) {
+        var it = ranked[r];
+        var rsegs = it.segments || [];
+        var detail = rsegs.length && (rsegs.length > 1 || rsegs[0].label);
+        var fillInner = '';
+        var chips = '';
+        if (detail) {
+          for (var s = 0; s < rsegs.length; s++) {
+            var col = SEG_COLORS[s % SEG_COLORS.length];
+            fillInner += '<i style="width:' + pct(rsegs[s].amount, it.paid) + '%;background:' + col + '"></i>';
+            var lbl = rsegs[s].label ? escapeHtml(rsegs[s].label) : ('第' + (s + 1) + '笔');
+            chips += '<span class="seg-chip"><i style="background:' + col + '"></i>' + lbl + ' ' + fmt(rsegs[s].amount) + '</span>';
+          }
+        } else {
+          fillInner = '<i style="width:100%;background:var(--expense)"></i>';
+        }
+        rankHtml += '<div class="rank-row">' +
+          '<div class="rank-row-head"><span>' + escapeHtml(it.name) + '</span>' +
+          '<span>' + fmt(it.paid) + ' <span class="pct">' + pct(it.paid, spent) + '%</span></span></div>' +
+          '<div class="rank-bar"><div class="rank-fill-seg" style="width:' + Math.max(4, pct(it.paid, maxPaid)) + '%">' + fillInner + '</div></div>' +
+          (chips ? '<div class="rank-segs">' + chips + '</div>' : '') +
+        '</div>';
+      }
+    } else {
+      rankHtml = '<div class="dash-empty">本月暂无开支记录</div>';
+    }
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">本月开支占比</div>' + rankHtml + '</section>';
+
+    var months = [];
+    var maxVal = 0;
+    var ySumInc = 0, ySumSav = 0, ySumExp = 0, activeMonths = 0;
+    for (var mo = 1; mo <= 12; mo++) {
+      var md = monthDataReadonly(year + '-' + pad2(mo));
+      var inc = sum(md.income, 'amount');
+      var sav = sum(md.savings, 'amount');
+      var exp = completedExpenseTotal(md.expenses);
+      maxVal = Math.max(maxVal, inc, sav, exp);
+      ySumInc += inc; ySumSav += sav; ySumExp += exp;
+      if (inc || sav || exp) activeMonths++;
+      months.push({ mo: mo, income: inc, saving: sav, expense: exp });
+    }
+    var barH = function (v) { return maxVal > 0 ? Math.max(2, Math.round((v / maxVal) * 100)) : 2; };
+    var cols = '';
+    for (var c = 0; c < months.length; c++) {
+      var x = months[c];
+      cols += '<div class="year-col"><div class="year-bars">' +
+        '<i class="b-income" style="height:' + barH(x.income) + '%"></i>' +
+        '<i class="b-saving" style="height:' + barH(x.saving) + '%"></i>' +
+        '<i class="b-expense" style="height:' + barH(x.expense) + '%"></i>' +
+        '</div><div class="m">' + x.mo + '</div></div>';
+    }
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">年度复盘 <span class="dash-sub">' + year + '</span></div>' +
+      '<div class="year-chart">' + cols + '</div>' +
+      '<div class="year-legend">' +
+        '<span><i class="b-income"></i>收入</span>' +
+        '<span><i class="b-saving"></i>储蓄</span>' +
+        '<span><i class="b-expense"></i>开支</span>' +
+      '</div>' +
+    '</section>';
+
+    var avgExp = activeMonths ? ySumExp / activeMonths : 0;
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">年度汇总 <span class="dash-sub">' + activeMonths + ' 个月有记录</span></div>' +
+      '<div class="dash-stats">' +
+        statCard('总收入', ySumInc, 'income') +
+        statCard('总储蓄', ySumSav, 'saving') +
+        statCard('总开支', ySumExp, 'expense') +
+        statCard('月均开支', avgExp, '') +
+      '</div>' +
+    '</section>';
+
+    var yearRate = pct(ySumSav, ySumInc);
+    var rateRows = '';
+    for (var s = 0; s < months.length; s++) {
+      var ym = months[s];
+      if (!ym.income) continue;
+      var rate = pct(ym.saving, ym.income);
+      rateRows += '<div class="rank-row">' +
+        '<div class="rank-row-head"><span>' + ym.mo + ' 月</span><span class="pct">' + rate + '%</span></div>' +
+        '<div class="rank-bar"><i style="width:' + Math.min(100, rate) + '%;background:var(--saving)"></i></div>' +
+      '</div>';
+    }
+    if (!rateRows) rateRows = '<div class="dash-empty">暂无收入记录</div>';
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">储蓄率 <span class="dash-sub">年度 ' + yearRate + '%</span></div>' +
+      rateRows + '</section>';
+
+    view.innerHTML = html;
+  }
+
+  function statCard(label, value, cls) {
+    return '<div class="dash-stat"><div class="label">' + escapeHtml(label) + '</div>' +
+      '<div class="value' + (cls ? ' ' + cls : '') + '">' + fmt(value) + '</div></div>';
+  }
+
   /* ---------- 渲染 ---------- */
   function render() {
     var key = monthKey(state.current);
     var m = getMonth(key);
-    $('monthLabel').textContent = key;
+    $('monthLabel').textContent = cycleRangeText(state.current);
 
     var incomeT = sum(m.income, 'amount');
     var savingT = sum(m.savings, 'amount');
@@ -1385,6 +1811,7 @@ window.BOOKKEEPING_CONFIG = {
     renderSimpleList($('savingList'), m.savings, 'savings');
     renderExpenseList($('expenseList'), m.expenses);
     updateBookBar();
+    if (state.activeTab === 'home') renderDashboard();
   }
 
   function renderSimpleList(ul, list, type) {
@@ -1437,6 +1864,13 @@ window.BOOKKEEPING_CONFIG = {
       meta.textContent = (item.date || '') + statusText;
       main.appendChild(name);
       main.appendChild(meta);
+      var notesText = paymentNotesSummary(item);
+      if (notesText) {
+        var notesEl = document.createElement('div');
+        notesEl.className = 'row-notes';
+        notesEl.textContent = notesText;
+        main.appendChild(notesEl);
+      }
 
       var amount = document.createElement('div');
       amount.className = 'row-amount';
@@ -1535,6 +1969,7 @@ window.BOOKKEEPING_CONFIG = {
     $('payPaidText').textContent = fmt(paid);
     $('payRemainText').textContent = fmt(Math.max(0, planned - paid));
     $('fPayAmount').value = '';
+    $('fPayNote').value = '';
     $('fPayDate').value = todayISO();
     $('paymentMask').hidden = false;
     $('paymentDrawer').hidden = false;
@@ -1560,11 +1995,14 @@ window.BOOKKEEPING_CONFIG = {
       return;
     }
     ensurePayments(item);
-    item.payments.push({
+    var pay = {
       id: uid(),
       amount: amt,
       date: $('fPayDate').value || todayISO()
-    });
+    };
+    var note = ($('fPayNote').value || '').trim();
+    if (note) pay.note = note;
+    item.payments.push(pay);
     refreshExpenseDone(item);
     item.actualAmount = expensePaid(item);
     save();
@@ -1713,7 +2151,7 @@ window.BOOKKEEPING_CONFIG = {
       render();
     });
     $('monthLabel').addEventListener('click', function () {
-      var input = prompt('跳转到月份（格式 YYYY-MM）', monthKey(state.current));
+      var input = prompt('跳转到周期开始月（格式 YYYY-MM，如 2026-06 表示 6/10 起）', monthKey(state.current));
       if (!input) return;
       var match = /^(\d{4})-(\d{1,2})$/.exec(input.trim());
       if (!match) { showToast('格式应为 YYYY-MM'); return; }
@@ -1759,11 +2197,19 @@ window.BOOKKEEPING_CONFIG = {
       joinBook($('fBookId').value);
     });
     $('bookMask').addEventListener('click', closeBookSetup);
+
+    document.querySelectorAll('.tab-item').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setTab(btn.getAttribute('data-tab'));
+      });
+    });
   }
 
   /* ---------- 启动 ---------- */
   function init() {
     bind();
+    state.current = cycleAnchor(new Date());
+    setTab(state.activeTab);
 
     var urlBook = resolveBookIdFromUrl();
     var savedBook = normalizeBookId(localStorage.getItem(BOOK_ID_KEY));

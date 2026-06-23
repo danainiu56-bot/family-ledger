@@ -1,0 +1,239 @@
+.dash { min-height: 100vh; }
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28rpx;
+  padding: 24rpx 32rpx;
+  background: var(--primary);
+  color: #fff;
+}
+.month-nav {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+  color: #fff;
+}
+.month-nav:active { background: rgba(255,255,255,.2); }
+.month-label {
+  font-size: 36rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  min-width: 220rpx;
+  text-align: center;
+}
+
+.dash-body { padding: 24rpx; }
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 2rpx 6rpx rgba(0,0,0,0.05);
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+.card-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 24rpx;
+}
+.card-title .sub {
+  font-size: 24rpx;
+  font-weight: 500;
+  color: var(--text-light);
+  margin-left: 8rpx;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+}
+.stat {
+  width: 50%;
+  padding: 12rpx;
+  box-sizing: border-box;
+}
+.stat .label { font-size: 24rpx; color: var(--text-muted); }
+.stat .value { font-size: 38rpx; font-weight: 700; margin-top: 6rpx; }
+.stat .value.income { color: var(--income); }
+.stat .value.saving { color: var(--saving); }
+.stat .value.expense { color: var(--expense); }
+.stat .value.neg { color: var(--danger); }
+
+.progress { margin-top: 16rpx; padding: 0 12rpx; }
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 24rpx;
+  color: var(--text-muted);
+  margin-bottom: 12rpx;
+}
+.track {
+  height: 20rpx;
+  border-radius: 12rpx;
+  background: var(--border);
+  overflow: hidden;
+}
+.fill {
+  height: 100%;
+  border-radius: 12rpx;
+  background: var(--primary);
+}
+.fill.over { background: var(--danger); }
+
+.rank-row { margin-bottom: 22rpx; }
+.rank-row:last-child { margin-bottom: 0; }
+.rank-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 26rpx;
+  color: var(--text);
+  margin-bottom: 10rpx;
+}
+.rank-name {
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rank-head .pct { color: var(--text-light); font-size: 24rpx; }
+.rank-bar {
+  height: 16rpx;
+  border-radius: 10rpx;
+  background: var(--border);
+  overflow: hidden;
+}
+.rank-fill {
+  height: 100%;
+  border-radius: 10rpx;
+  background: var(--expense);
+}
+.rank-fill.saving { background: var(--saving); }
+.rank-fill-seg {
+  display: flex;
+  height: 100%;
+  border-radius: 10rpx;
+  overflow: hidden;
+}
+.rank-fill-seg .seg { height: 100%; }
+.rank-fill-seg .seg-solid { width: 100%; background: var(--expense); }
+.rank-segs {
+  margin-top: 12rpx;
+  display: flex;
+  flex-wrap: wrap;
+}
+.seg-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 24rpx;
+  color: var(--text-muted);
+  margin: 4rpx 24rpx 4rpx 0;
+}
+.seg-dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 4rpx;
+  margin-right: 8rpx;
+  display: inline-block;
+}
+
+.year-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6rpx;
+  height: 280rpx;
+  padding-top: 12rpx;
+}
+.year-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  height: 100%;
+  justify-content: flex-end;
+}
+.year-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3rpx;
+  width: 100%;
+  height: 100%;
+}
+.year-bars .bar {
+  width: 10rpx;
+  border-radius: 4rpx 4rpx 0 0;
+  min-height: 4rpx;
+}
+.year-bars .b-income { background: var(--income); }
+.year-bars .b-saving { background: var(--saving); }
+.year-bars .b-expense { background: var(--expense); }
+.year-col .m { font-size: 20rpx; color: var(--text-light); }
+
+.legend {
+  display: flex;
+  gap: 28rpx;
+  margin-top: 24rpx;
+  font-size: 24rpx;
+  color: var(--text-muted);
+}
+.legend .lg { display: inline-flex; align-items: center; }
+.legend .dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 4rpx;
+  margin-right: 10rpx;
+  display: inline-block;
+}
+.legend .dot.b-income { background: var(--income); }
+.legend .dot.b-saving { background: var(--saving); }
+.legend .dot.b-expense { background: var(--expense); }
+
+.empty {
+  text-align: center;
+  color: var(--text-light);
+  font-size: 26rpx;
+  padding: 36rpx 0;
+}
+
+.no-book {
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 64rpx;
+  text-align: center;
+}
+.no-book-title {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 20rpx;
+}
+.no-book-desc {
+  font-size: 28rpx;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 48rpx;
+}
+.no-book-btn {
+  background: var(--primary);
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: 0 64rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+}

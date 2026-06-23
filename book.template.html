@@ -58,7 +58,7 @@
       <button type="button" class="sync-retry-btn" id="syncRetryBtn">重试</button>
     </div>
 
-    <main class="content">
+    <main class="content" id="planView">
       <section class="summary-card" id="summaryCard">
         <div class="summary-row summary-row-4">
           <div class="summary-item" id="editBudgetBtn">
@@ -124,6 +124,25 @@
         <ul class="list" id="expenseList"></ul>
       </section>
     </main>
+
+    <main class="content dash-view" id="dashView" hidden></main>
+
+    <nav class="tabbar" id="tabbar">
+      <button type="button" class="tab-item active" data-tab="home" aria-label="首页">
+        <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M3 11l9-8 9 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M5 10v10h14V10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="tab-text">首页</span>
+      </button>
+      <button type="button" class="tab-item" data-tab="plan" aria-label="计划">
+        <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M6 3h9l5 5v13H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M9 12h7M9 16h7M9 8h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="tab-text">计划</span>
+      </button>
+    </nav>
   </div>
 
   <div class="drawer-mask" id="bookMask" hidden></div>
@@ -195,6 +214,10 @@
       <label class="field">
         <span class="field-label">本次支出金额</span>
         <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00">
+      </label>
+      <label class="field">
+        <span class="field-label">备注</span>
+        <input type="text" id="fPayNote" maxlength="40" placeholder="选填，如：超市买菜">
       </label>
       <label class="field">
         <span class="field-label">日期</span>

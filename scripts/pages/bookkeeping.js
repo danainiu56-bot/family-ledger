@@ -25,6 +25,18 @@
   }
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
   function monthKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
+  var CYCLE_START_DAY = 10;
+  function cycleAnchor(d) {
+    var y = d.getFullYear();
+    var mo = d.getMonth();
+    if (d.getDate() < CYCLE_START_DAY) mo -= 1;
+    return new Date(y, mo, 1);
+  }
+  function cycleRangeText(d) {
+    var start = new Date(d.getFullYear(), d.getMonth(), 1);
+    var end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return (start.getMonth() + 1) + '/' + CYCLE_START_DAY + ' - ' + (end.getMonth() + 1) + '/' + CYCLE_START_DAY;
+  }
   function todayISO() {
     var d = new Date();
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
@@ -521,7 +533,8 @@
     bookId: '',
     syncFailed: false,
     realtimeReady: false,
-    payingExpenseId: null
+    payingExpenseId: null,
+    activeTab: 'home'
   };
 
   /* ---------- 计算 ---------- */
@@ -566,6 +579,15 @@
     if (item.payments && item.payments.length) return item.payments.length;
     if (item.done && expensePaid(item) > 0) return 1;
     return 0;
+  }
+  function paymentNotesSummary(item) {
+    if (!item.payments || !item.payments.length) return '';
+    var notes = [];
+    for (var i = 0; i < item.payments.length; i++) {
+      var n = (item.payments[i].note || '').trim();
+      if (n) notes.push(n);
+    }
+    return notes.join('、');
   }
   function refreshExpenseDone(item) {
     var planned = num(item.plannedAmount);
@@ -615,11 +637,184 @@
     state.data.budgetByMonth[key] = sum(m.income, 'amount');
   }
 
+  /* ---------- Tab 与数据看板 ---------- */
+  function setTab(tab) {
+    state.activeTab = tab;
+    $('planView').hidden = tab !== 'plan';
+    $('dashView').hidden = tab !== 'home';
+    var items = document.querySelectorAll('.tab-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.toggle('active', items[i].getAttribute('data-tab') === tab);
+    }
+    if (tab === 'home') renderDashboard();
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  function pct(part, whole) {
+    return whole > 0 ? Math.round((part / whole) * 100) : 0;
+  }
+  function monthDataReadonly(key) {
+    return state.data.months[key] || { income: [], savings: [], expenses: [] };
+  }
+
+  function renderDashboard() {
+    var view = $('dashView');
+    if (!view) return;
+    var key = monthKey(state.current);
+    var year = state.current.getFullYear();
+    var m = monthDataReadonly(key);
+
+    var income = sum(m.income, 'amount');
+    var saving = sum(m.savings, 'amount');
+    var spent = completedExpenseTotal(m.expenses);
+    var budget = num(state.data.budgetByMonth[key]);
+    var actualSpent = saving + spent;
+    var balance = income - actualSpent;
+    var execPct = budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0;
+    var execOver = budget > 0 && actualSpent > budget;
+
+    var html = '';
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">本月复盘 <span class="dash-sub">' + escapeHtml(cycleRangeText(state.current)) + '</span></div>' +
+      '<div class="dash-stats">' +
+        statCard('收入', income, 'income') +
+        statCard('储蓄', saving, 'saving') +
+        statCard('已花开支', spent, 'expense') +
+        statCard('结余', balance, balance < 0 ? 'neg' : '') +
+      '</div>' +
+      '<div class="dash-progress">' +
+        '<div class="dash-progress-head"><span>预算执行</span><span>' +
+          fmt(actualSpent) + ' / ' + (budget > 0 ? fmt(budget) : '未设预算') + '</span></div>' +
+        '<div class="dash-track"><div class="dash-fill' + (execOver ? ' over' : '') +
+          '" style="width:' + execPct + '%"></div></div>' +
+      '</div>' +
+    '</section>';
+
+    var ranked = [];
+    for (var i = 0; i < m.expenses.length; i++) {
+      var ex = m.expenses[i];
+      var paid = expensePaid(ex);
+      if (paid <= 0) continue;
+      var segs = [];
+      if (ex.payments && ex.payments.length) {
+        for (var pi = 0; pi < ex.payments.length; pi++) {
+          var amt = num(ex.payments[pi].amount);
+          if (amt > 0) segs.push({ label: (ex.payments[pi].note || '').trim(), amount: amt });
+        }
+      }
+      ranked.push({ name: ex.name, paid: paid, segments: segs });
+    }
+    ranked.sort(function (a, b) { return b.paid - a.paid; });
+    var maxPaid = ranked.length ? ranked[0].paid : 0;
+    var SEG_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#14b8a6', '#ef4444', '#0ea5e9'];
+    var rankHtml = '';
+    if (ranked.length) {
+      for (var r = 0; r < Math.min(ranked.length, 8); r++) {
+        var it = ranked[r];
+        var rsegs = it.segments || [];
+        var detail = rsegs.length && (rsegs.length > 1 || rsegs[0].label);
+        var fillInner = '';
+        var chips = '';
+        if (detail) {
+          for (var s = 0; s < rsegs.length; s++) {
+            var col = SEG_COLORS[s % SEG_COLORS.length];
+            fillInner += '<i style="width:' + pct(rsegs[s].amount, it.paid) + '%;background:' + col + '"></i>';
+            var lbl = rsegs[s].label ? escapeHtml(rsegs[s].label) : ('第' + (s + 1) + '笔');
+            chips += '<span class="seg-chip"><i style="background:' + col + '"></i>' + lbl + ' ' + fmt(rsegs[s].amount) + '</span>';
+          }
+        } else {
+          fillInner = '<i style="width:100%;background:var(--expense)"></i>';
+        }
+        rankHtml += '<div class="rank-row">' +
+          '<div class="rank-row-head"><span>' + escapeHtml(it.name) + '</span>' +
+          '<span>' + fmt(it.paid) + ' <span class="pct">' + pct(it.paid, spent) + '%</span></span></div>' +
+          '<div class="rank-bar"><div class="rank-fill-seg" style="width:' + Math.max(4, pct(it.paid, maxPaid)) + '%">' + fillInner + '</div></div>' +
+          (chips ? '<div class="rank-segs">' + chips + '</div>' : '') +
+        '</div>';
+      }
+    } else {
+      rankHtml = '<div class="dash-empty">本月暂无开支记录</div>';
+    }
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">本月开支占比</div>' + rankHtml + '</section>';
+
+    var months = [];
+    var maxVal = 0;
+    var ySumInc = 0, ySumSav = 0, ySumExp = 0, activeMonths = 0;
+    for (var mo = 1; mo <= 12; mo++) {
+      var md = monthDataReadonly(year + '-' + pad2(mo));
+      var inc = sum(md.income, 'amount');
+      var sav = sum(md.savings, 'amount');
+      var exp = completedExpenseTotal(md.expenses);
+      maxVal = Math.max(maxVal, inc, sav, exp);
+      ySumInc += inc; ySumSav += sav; ySumExp += exp;
+      if (inc || sav || exp) activeMonths++;
+      months.push({ mo: mo, income: inc, saving: sav, expense: exp });
+    }
+    var barH = function (v) { return maxVal > 0 ? Math.max(2, Math.round((v / maxVal) * 100)) : 2; };
+    var cols = '';
+    for (var c = 0; c < months.length; c++) {
+      var x = months[c];
+      cols += '<div class="year-col"><div class="year-bars">' +
+        '<i class="b-income" style="height:' + barH(x.income) + '%"></i>' +
+        '<i class="b-saving" style="height:' + barH(x.saving) + '%"></i>' +
+        '<i class="b-expense" style="height:' + barH(x.expense) + '%"></i>' +
+        '</div><div class="m">' + x.mo + '</div></div>';
+    }
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">年度复盘 <span class="dash-sub">' + year + '</span></div>' +
+      '<div class="year-chart">' + cols + '</div>' +
+      '<div class="year-legend">' +
+        '<span><i class="b-income"></i>收入</span>' +
+        '<span><i class="b-saving"></i>储蓄</span>' +
+        '<span><i class="b-expense"></i>开支</span>' +
+      '</div>' +
+    '</section>';
+
+    var avgExp = activeMonths ? ySumExp / activeMonths : 0;
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">年度汇总 <span class="dash-sub">' + activeMonths + ' 个月有记录</span></div>' +
+      '<div class="dash-stats">' +
+        statCard('总收入', ySumInc, 'income') +
+        statCard('总储蓄', ySumSav, 'saving') +
+        statCard('总开支', ySumExp, 'expense') +
+        statCard('月均开支', avgExp, '') +
+      '</div>' +
+    '</section>';
+
+    var yearRate = pct(ySumSav, ySumInc);
+    var rateRows = '';
+    for (var s = 0; s < months.length; s++) {
+      var ym = months[s];
+      if (!ym.income) continue;
+      var rate = pct(ym.saving, ym.income);
+      rateRows += '<div class="rank-row">' +
+        '<div class="rank-row-head"><span>' + ym.mo + ' 月</span><span class="pct">' + rate + '%</span></div>' +
+        '<div class="rank-bar"><i style="width:' + Math.min(100, rate) + '%;background:var(--saving)"></i></div>' +
+      '</div>';
+    }
+    if (!rateRows) rateRows = '<div class="dash-empty">暂无收入记录</div>';
+    html += '<section class="dash-section">' +
+      '<div class="dash-title">储蓄率 <span class="dash-sub">年度 ' + yearRate + '%</span></div>' +
+      rateRows + '</section>';
+
+    view.innerHTML = html;
+  }
+
+  function statCard(label, value, cls) {
+    return '<div class="dash-stat"><div class="label">' + escapeHtml(label) + '</div>' +
+      '<div class="value' + (cls ? ' ' + cls : '') + '">' + fmt(value) + '</div></div>';
+  }
+
   /* ---------- 渲染 ---------- */
   function render() {
     var key = monthKey(state.current);
     var m = getMonth(key);
-    $('monthLabel').textContent = key;
+    $('monthLabel').textContent = cycleRangeText(state.current);
 
     var incomeT = sum(m.income, 'amount');
     var savingT = sum(m.savings, 'amount');
@@ -654,6 +849,7 @@
     renderSimpleList($('savingList'), m.savings, 'savings');
     renderExpenseList($('expenseList'), m.expenses);
     updateBookBar();
+    if (state.activeTab === 'home') renderDashboard();
   }
 
   function renderSimpleList(ul, list, type) {
@@ -706,6 +902,13 @@
       meta.textContent = (item.date || '') + statusText;
       main.appendChild(name);
       main.appendChild(meta);
+      var notesText = paymentNotesSummary(item);
+      if (notesText) {
+        var notesEl = document.createElement('div');
+        notesEl.className = 'row-notes';
+        notesEl.textContent = notesText;
+        main.appendChild(notesEl);
+      }
 
       var amount = document.createElement('div');
       amount.className = 'row-amount';
@@ -804,6 +1007,7 @@
     $('payPaidText').textContent = fmt(paid);
     $('payRemainText').textContent = fmt(Math.max(0, planned - paid));
     $('fPayAmount').value = '';
+    $('fPayNote').value = '';
     $('fPayDate').value = todayISO();
     $('paymentMask').hidden = false;
     $('paymentDrawer').hidden = false;
@@ -829,11 +1033,14 @@
       return;
     }
     ensurePayments(item);
-    item.payments.push({
+    var pay = {
       id: uid(),
       amount: amt,
       date: $('fPayDate').value || todayISO()
-    });
+    };
+    var note = ($('fPayNote').value || '').trim();
+    if (note) pay.note = note;
+    item.payments.push(pay);
     refreshExpenseDone(item);
     item.actualAmount = expensePaid(item);
     save();
@@ -982,7 +1189,7 @@
       render();
     });
     $('monthLabel').addEventListener('click', function () {
-      var input = prompt('跳转到月份（格式 YYYY-MM）', monthKey(state.current));
+      var input = prompt('跳转到周期开始月（格式 YYYY-MM，如 2026-06 表示 6/10 起）', monthKey(state.current));
       if (!input) return;
       var match = /^(\d{4})-(\d{1,2})$/.exec(input.trim());
       if (!match) { showToast('格式应为 YYYY-MM'); return; }
@@ -1028,11 +1235,19 @@
       joinBook($('fBookId').value);
     });
     $('bookMask').addEventListener('click', closeBookSetup);
+
+    document.querySelectorAll('.tab-item').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        setTab(btn.getAttribute('data-tab'));
+      });
+    });
   }
 
   /* ---------- 启动 ---------- */
   function init() {
     bind();
+    state.current = cycleAnchor(new Date());
+    setTab(state.activeTab);
 
     var urlBook = resolveBookIdFromUrl();
     var savedBook = normalizeBookId(localStorage.getItem(BOOK_ID_KEY));

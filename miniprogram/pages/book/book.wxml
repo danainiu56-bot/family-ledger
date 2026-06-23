@@ -3,7 +3,7 @@
   <view class="topbar">
     <view class="month-nav" bindtap="prevMonth">◀</view>
     <picker mode="date" fields="month" value="{{monthPickerValue}}" bindchange="onMonthPick">
-      <view class="month-label">{{monthKey}}</view>
+      <view class="month-label">{{monthRange}}</view>
     </picker>
     <view class="month-nav" bindtap="nextMonth">▶</view>
   </view>
@@ -123,6 +123,7 @@
           <view class="row-main">
             <view class="row-name {{item.nameDone ? 'done' : ''}}">{{item.name}}</view>
             <view class="row-meta">{{item.metaText}}</view>
+            <view wx:if="{{item.notesText}}" class="row-notes">{{item.notesText}}</view>
           </view>
           <view wx:if="{{item.showPay}}" class="row-pay-btn" catchtap="openPayment" data-id="{{item.id}}">记支出</view>
           <view class="row-amount">
@@ -200,6 +201,10 @@
       <view class="field">
         <text class="field-label">本次支出金额</text>
         <input class="input" type="digit" value="{{pay.amount}}" placeholder="0.00" data-k="payAmount" bindinput="onInput" />
+      </view>
+      <view class="field">
+        <text class="field-label">备注</text>
+        <input class="input" type="text" maxlength="40" value="{{pay.note}}" placeholder="选填，如：超市买菜" data-k="payNote" bindinput="onInput" />
       </view>
       <view class="field">
         <text class="field-label">日期</text>

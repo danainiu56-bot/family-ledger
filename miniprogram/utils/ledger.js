@@ -14,6 +14,18 @@ var BOOK_ID_KEY = 'bookkeeping_book_id';
 /* ---------- 基础工具 ---------- */
 function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 function monthKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
+var CYCLE_START_DAY = 10;
+function cycleAnchor(d) {
+  var y = d.getFullYear();
+  var mo = d.getMonth();
+  if (d.getDate() < CYCLE_START_DAY) mo -= 1;
+  return new Date(y, mo, 1);
+}
+function cycleRangeText(d) {
+  var start = new Date(d.getFullYear(), d.getMonth(), 1);
+  var end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  return (start.getMonth() + 1) + '/' + CYCLE_START_DAY + ' - ' + (end.getMonth() + 1) + '/' + CYCLE_START_DAY;
+}
 function todayISO() {
   var d = new Date();
   return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
@@ -88,6 +100,15 @@ function expensePaymentCount(item) {
   if (item.done && expensePaid(item) > 0) return 1;
   return 0;
 }
+function paymentNotesSummary(item) {
+  if (!item.payments || !item.payments.length) return '';
+  var notes = [];
+  for (var i = 0; i < item.payments.length; i++) {
+    var n = (item.payments[i].note || '').trim();
+    if (n) notes.push(n);
+  }
+  return notes.join('、');
+}
 function refreshExpenseDone(item) {
   var planned = num(item.plannedAmount);
   var wasDone = !!item.done;
@@ -132,6 +153,65 @@ function calcActualSpent(m) {
   return sum(m.savings, 'amount') + completedExpenseTotal(m.expenses);
 }
 
+/* ---------- 看板汇总（只读） ---------- */
+function monthDataOf(data, key) {
+  return (data && data.months && data.months[key]) || { income: [], savings: [], expenses: [] };
+}
+function monthOverview(data, key) {
+  var m = monthDataOf(data, key);
+  var income = sum(m.income, 'amount');
+  var saving = sum(m.savings, 'amount');
+  var spent = completedExpenseTotal(m.expenses);
+  var planned = sum(m.expenses, 'plannedAmount');
+  var budget = num((data && data.budgetByMonth ? data.budgetByMonth[key] : 0));
+  var actualSpent = saving + spent;
+  var ranked = [];
+  for (var i = 0; i < m.expenses.length; i++) {
+    var ex = m.expenses[i];
+    var paid = expensePaid(ex);
+    if (paid <= 0) continue;
+    var segs = [];
+    if (ex.payments && ex.payments.length) {
+      for (var pi = 0; pi < ex.payments.length; pi++) {
+        var amt = num(ex.payments[pi].amount);
+        if (amt > 0) segs.push({ label: (ex.payments[pi].note || '').trim(), amount: amt });
+      }
+    }
+    ranked.push({ name: ex.name, paid: paid, segments: segs });
+  }
+  ranked.sort(function (a, b) { return b.paid - a.paid; });
+  return {
+    income: income, saving: saving, spent: spent, planned: planned,
+    budget: budget, actualSpent: actualSpent, balance: income - actualSpent,
+    execPct: budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0,
+    execOver: budget > 0 && actualSpent > budget,
+    ranked: ranked
+  };
+}
+function yearSummary(data, year) {
+  var months = [];
+  var maxVal = 0, totalIncome = 0, totalSaving = 0, totalExpense = 0, activeMonths = 0;
+  for (var mo = 1; mo <= 12; mo++) {
+    var md = monthDataOf(data, year + '-' + pad2(mo));
+    var inc = sum(md.income, 'amount');
+    var sav = sum(md.savings, 'amount');
+    var exp = completedExpenseTotal(md.expenses);
+    if (inc > maxVal) maxVal = inc;
+    if (sav > maxVal) maxVal = sav;
+    if (exp > maxVal) maxVal = exp;
+    totalIncome += inc; totalSaving += sav; totalExpense += exp;
+    if (inc || sav || exp) activeMonths++;
+    months.push({ mo: mo, income: inc, saving: sav, expense: exp });
+  }
+  return {
+    months: months, maxVal: maxVal,
+    totalIncome: totalIncome, totalSaving: totalSaving, totalExpense: totalExpense,
+    activeMonths: activeMonths,
+    avgExpense: activeMonths ? totalExpense / activeMonths : 0,
+    yearRate: totalIncome > 0 ? Math.round((totalSaving / totalIncome) * 100) : 0
+  };
+}
+
 /* ---------- 本地缓存 ---------- */
 function dataStorageKey(bookId) { return STORAGE_PREFIX + '_' + (bookId || '_none'); }
 function syncStorageKey(bookId) { return SYNC_PREFIX + '_' + (bookId || '_none'); }
@@ -171,6 +251,10 @@ function setSavedBookId(id) {
 /* ---------- 云端（Supabase REST） ---------- */
 function cloudEnabled() {
   return !!(config.supabaseUrl && config.supabaseAnonKey);
+}
+function supabaseHost() {
+  var m = /^https?:\/\/[^/]+/.exec(config.supabaseUrl || '');
+  return m ? m[0] : (config.supabaseUrl || '');
 }
 function headers(extra) {
   var h = {
@@ -229,18 +313,23 @@ function cloudPush(bookId, data) {
 
 module.exports = {
   // 工具
-  pad2: pad2, monthKey: monthKey, todayISO: todayISO, uid: uid, newBookId: newBookId,
+  pad2: pad2, monthKey: monthKey, cycleAnchor: cycleAnchor, cycleRangeText: cycleRangeText,
+  todayISO: todayISO, uid: uid, newBookId: newBookId,
   num: num, fmt: fmt, normalizeBookId: normalizeBookId, isValidBookId: isValidBookId,
   // 模型
   emptyMonth: emptyMonth, emptyData: emptyData, getMonth: getMonth,
   // 计算
   sum: sum, expensePaid: expensePaid, expenseStatus: expenseStatus,
   ensurePayments: ensurePayments, expensePaymentCount: expensePaymentCount,
+  paymentNotesSummary: paymentNotesSummary,
   refreshExpenseDone: refreshExpenseDone, sortExpensesForDisplay: sortExpensesForDisplay,
   completedExpenseTotal: completedExpenseTotal, calcActualSpent: calcActualSpent,
+  // 看板
+  monthOverview: monthOverview, yearSummary: yearSummary,
   // 缓存
   loadLocal: loadLocal, saveLocal: saveLocal, getSyncAt: getSyncAt, setSyncAt: setSyncAt,
   getSavedBookId: getSavedBookId, setSavedBookId: setSavedBookId,
   // 云端
-  cloudEnabled: cloudEnabled, cloudFetch: cloudFetch, cloudPush: cloudPush
+  cloudEnabled: cloudEnabled, supabaseHost: supabaseHost,
+  cloudFetch: cloudFetch, cloudPush: cloudPush
 };
