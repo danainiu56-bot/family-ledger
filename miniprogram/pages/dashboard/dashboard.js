@@ -14,6 +14,35 @@ function fmtTime(iso) {
   } catch (e) { return ''; }
 }
 
+function escMini(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function aiInline(s) {
+  return s.replace(/\*\*([^*]+)\*\*/g, '<strong style="font-weight:700;">$1</strong>');
+}
+// 把 AI 建议（含 Markdown）转成 rich-text 可渲染的 HTML，段标题加粗高亮。
+function aiAdviceHtml(text) {
+  var lines = escMini(text).split(/\r?\n/);
+  var html = '', listOpen = false;
+  function closeList() { if (listOpen) { html += '</ul>'; listOpen = false; } }
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i].trim();
+    if (!ln) { closeList(); continue; }
+    var li = ln.match(/^[-*]\s+(.*)$/) || ln.match(/^\d+[.、)]\s+(.*)$/);
+    if (li) {
+      if (!listOpen) { html += '<ul style="margin:6rpx 0 12rpx;padding-left:36rpx;">'; listOpen = true; }
+      html += '<li style="margin:4rpx 0;">' + aiInline(li[1]) + '</li>';
+      continue;
+    }
+    closeList();
+    ln = ln.replace(/^#{1,6}\s+/, '');
+    ln = ln.replace(/^\[([^\]]+)\]/, '<strong style="color:#6366f1;font-weight:700;">$1</strong>');
+    html += '<p style="margin:0 0 12rpx;">' + aiInline(ln) + '</p>';
+  }
+  closeList();
+  return html;
+}
+
 Page({
   data: {
     hasBook: true,
@@ -156,9 +185,9 @@ Page({
     var cache = L.getAiCache(this.bookId, key);
     var ai;
     if (cache && cache.fingerprint === fp && cache.advice) {
-      ai = { state: 'done', advice: cache.advice, error: '', time: cache.time || '', cached: true, stale: false };
+      ai = { state: 'done', advice: cache.advice, html: aiAdviceHtml(cache.advice), error: '', time: cache.time || '', cached: true, stale: false };
     } else {
-      ai = { state: 'idle', advice: '', error: '', time: '', cached: false, stale: !!(cache && cache.advice) };
+      ai = { state: 'idle', advice: '', html: '', error: '', time: '', cached: false, stale: !!(cache && cache.advice) };
     }
 
     this.setData({ monthLabel: L.cycleRangeText(this.cur), year: year, mo: mo, yr: yr, ai: ai });
@@ -178,7 +207,7 @@ Page({
     if (!force) {
       var cache = L.getAiCache(this.bookId, key);
       if (cache && cache.fingerprint === fp && cache.advice) {
-        self.setData({ ai: { state: 'done', advice: cache.advice, error: '', time: cache.time || '', cached: true, stale: false } });
+        self.setData({ ai: { state: 'done', advice: cache.advice, html: aiAdviceHtml(cache.advice), error: '', time: cache.time || '', cached: true, stale: false } });
         return;
       }
     }
@@ -186,7 +215,7 @@ Page({
     L.fetchAiSummary(key, ov).then(function (res) {
       var time = fmtTime(res.generatedAt);
       L.setAiCache(self.bookId, key, { advice: res.advice, fingerprint: fp, time: time });
-      self.setData({ ai: { state: 'done', advice: res.advice, error: '', time: time, cached: false, stale: false } });
+      self.setData({ ai: { state: 'done', advice: res.advice, html: aiAdviceHtml(res.advice), error: '', time: time, cached: false, stale: false } });
     }).catch(function (err) {
       var msg = (err && err.message) || '生成失败，请重试';
       if (/fail|网络|timeout|abort/i.test(msg)) msg = '网络连接失败，请检查网络后重试';

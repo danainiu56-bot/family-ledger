@@ -68,7 +68,7 @@
         </view>
 
         <block wx:elif="{{ai.state === 'done'}}">
-          <view class="ai-advice">{{ai.advice}}</view>
+          <rich-text class="ai-advice" nodes="{{ai.html}}"></rich-text>
           <view class="ai-foot">
             <text class="ai-time">{{ai.cached ? '上次生成 ' : '生成于 '}}{{ai.time}}</text>
             <text class="ai-regen" bindtap="genAdvice" data-force="1">重新生成</text>
