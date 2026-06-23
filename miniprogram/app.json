@@ -1,5 +1,6 @@
 {
   "pages": [
+    "pages/dashboard/dashboard",
     "pages/book/book"
   ],
   "window": {
@@ -8,6 +9,26 @@
     "navigationBarTextStyle": "white",
     "backgroundColor": "#f1f5f9",
     "backgroundColorTop": "#6366f1"
+  },
+  "tabBar": {
+    "color": "#94a3b8",
+    "selectedColor": "#6366f1",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/dashboard/dashboard",
+        "text": "首页",
+        "iconPath": "images/home.png",
+        "selectedIconPath": "images/home-active.png"
+      },
+      {
+        "pagePath": "pages/book/book",
+        "text": "计划",
+        "iconPath": "images/plan.png",
+        "selectedIconPath": "images/plan-active.png"
+      }
+    ]
   },
   "style": "v2",
   "lazyCodeLoading": "requiredComponents",
