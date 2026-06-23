@@ -699,10 +699,13 @@
     var url = c.aiSummaryUrl || (c.supabaseUrl + '/functions/v1/ai-summary');
     var customAiUrl = !!c.aiSummaryUrl;
     var headers = customAiUrl ? { 'Content-Type': 'application/json' } : supabaseHeaders();
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 30000) : null;
     return fetch(url, {
       method: 'POST',
       headers: headers,
-      body: JSON.stringify({ monthKey: key, overview: ov })
+      body: JSON.stringify({ monthKey: key, overview: ov }),
+      signal: ctrl ? ctrl.signal : undefined
     }).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (data) {
         if (!res.ok || !data || !data.advice) {
@@ -710,7 +713,7 @@
         }
         return data;
       });
-    });
+    }).finally(function () { if (timer) clearTimeout(timer); });
   }
   function aiCardHtml(ov, key) {
     var fp = aiFingerprint(ov);
@@ -770,7 +773,8 @@
       renderDashboard();
     }).catch(function (err) {
       var msg = (err && err.message) || '生成失败，请重试';
-      if (/failed to fetch|networkerror|load failed/i.test(msg)) msg = '网络连接失败，请检查网络后重试';
+      if (err && err.name === 'AbortError') msg = '请求超时，AI 服务可能在当前网络下不稳定，请稍后重试';
+      else if (/failed to fetch|networkerror|load failed|abort/i.test(msg)) msg = '网络连接失败，请检查网络后重试';
       aiState = { key: key, state: 'error', advice: '', error: msg, time: '', cached: false, stale: false };
       renderDashboard();
     });
