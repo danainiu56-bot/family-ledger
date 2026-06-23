@@ -6,13 +6,22 @@ function barH(v, maxVal) {
   return maxVal > 0 ? Math.max(2, Math.round((v / maxVal) * 100)) : 2;
 }
 
+function fmtTime(iso) {
+  try {
+    var d = iso ? new Date(iso) : new Date();
+    function p(n) { return n < 10 ? '0' + n : '' + n; }
+    return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  } catch (e) { return ''; }
+}
+
 Page({
   data: {
     hasBook: true,
     monthLabel: '',
     year: 0,
     mo: { ranked: [] },
-    yr: { cols: [], rateRows: [] }
+    yr: { cols: [], rateRows: [] },
+    ai: { state: 'idle', advice: '', error: '', time: '', cached: false, stale: false }
   },
 
   onLoad: function () {
@@ -141,6 +150,47 @@ Page({
       rateRows: rateRows
     };
 
-    this.setData({ monthLabel: L.cycleRangeText(this.cur), year: year, mo: mo, yr: yr });
+    this._ov = o;
+    this._key = key;
+    var fp = L.overviewFingerprint(o);
+    var cache = L.getAiCache(this.bookId, key);
+    var ai;
+    if (cache && cache.fingerprint === fp && cache.advice) {
+      ai = { state: 'done', advice: cache.advice, error: '', time: cache.time || '', cached: true, stale: false };
+    } else {
+      ai = { state: 'idle', advice: '', error: '', time: '', cached: false, stale: !!(cache && cache.advice) };
+    }
+
+    this.setData({ monthLabel: L.cycleRangeText(this.cur), year: year, mo: mo, yr: yr, ai: ai });
+  },
+
+  genAdvice: function (e) {
+    var self = this;
+    var force = !!(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.force);
+    var ov = this._ov;
+    var key = this._key;
+    if (!ov) return;
+    if ((!ov.ranked || !ov.ranked.length) && ov.spent <= 0) {
+      self.setData({ ai: { state: 'error', advice: '', error: '本周期还没有开支记录，先记几笔再来生成建议吧', time: '', cached: false, stale: false } });
+      return;
+    }
+    var fp = L.overviewFingerprint(ov);
+    if (!force) {
+      var cache = L.getAiCache(this.bookId, key);
+      if (cache && cache.fingerprint === fp && cache.advice) {
+        self.setData({ ai: { state: 'done', advice: cache.advice, error: '', time: cache.time || '', cached: true, stale: false } });
+        return;
+      }
+    }
+    self.setData({ 'ai.state': 'loading', 'ai.error': '' });
+    L.fetchAiSummary(key, ov).then(function (res) {
+      var time = fmtTime(res.generatedAt);
+      L.setAiCache(self.bookId, key, { advice: res.advice, fingerprint: fp, time: time });
+      self.setData({ ai: { state: 'done', advice: res.advice, error: '', time: time, cached: false, stale: false } });
+    }).catch(function (err) {
+      var msg = (err && err.message) || '生成失败，请重试';
+      if (/fail|网络|timeout|abort/i.test(msg)) msg = '网络连接失败，请检查网络后重试';
+      self.setData({ ai: { state: 'error', advice: '', error: msg, time: '', cached: false, stale: false } });
+    });
   }
 });

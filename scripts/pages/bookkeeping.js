@@ -661,6 +661,118 @@
     return state.data.months[key] || { income: [], savings: [], expenses: [] };
   }
 
+  /* ---------- AI 开支建议 ---------- */
+  var AI_PREFIX = 'bookkeeping_ai_advice';
+  var aiState = { key: '', state: 'idle', advice: '', error: '', time: '', cached: false, stale: false };
+
+  function aiStorageKey(bookId, key) { return AI_PREFIX + '_' + (bookId || '_none') + '_' + key; }
+  function aiFingerprint(ov) {
+    if (!ov) return '0';
+    var parts = [ov.income, ov.saving, ov.spent, ov.planned, ov.budget];
+    var ranked = ov.ranked || [];
+    for (var i = 0; i < ranked.length; i++) {
+      parts.push(ranked[i].name + ':' + ranked[i].paid);
+      var segs = ranked[i].segments || [];
+      for (var j = 0; j < segs.length; j++) parts.push((segs[j].label || '') + '=' + segs[j].amount);
+    }
+    var s = parts.join('|'), h = 5381;
+    for (var k = 0; k < s.length; k++) h = ((h << 5) + h + s.charCodeAt(k)) | 0;
+    return String(h >>> 0);
+  }
+  function aiGetCache(key) {
+    try {
+      var raw = localStorage.getItem(aiStorageKey(state.bookId, key));
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function aiSetCache(key, obj) {
+    try { localStorage.setItem(aiStorageKey(state.bookId, key), JSON.stringify(obj)); } catch (e) {}
+  }
+  function aiTimeText(iso) {
+    try {
+      var d = iso ? new Date(iso) : new Date();
+      return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    } catch (e) { return ''; }
+  }
+  function fetchAiSummaryH5(key, ov) {
+    var c = getConfig();
+    return fetch(c.supabaseUrl + '/functions/v1/ai-summary', {
+      method: 'POST',
+      headers: supabaseHeaders(),
+      body: JSON.stringify({ monthKey: key, overview: ov })
+    }).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (data) {
+        if (!res.ok || !data || !data.advice) {
+          throw new Error((data && data.error) || ('HTTP ' + res.status));
+        }
+        return data;
+      });
+    });
+  }
+  function aiCardHtml(ov, key) {
+    var fp = aiFingerprint(ov);
+    var s;
+    if (aiState.key === key && (aiState.state === 'loading' || aiState.state === 'done' || aiState.state === 'error')) {
+      s = aiState;
+    } else {
+      var cache = aiGetCache(key);
+      if (cache && cache.fingerprint === fp && cache.advice) {
+        s = { state: 'done', advice: cache.advice, time: cache.time || '', cached: true, stale: false, error: '' };
+      } else {
+        s = { state: 'idle', advice: '', time: '', cached: false, error: '', stale: !!(cache && cache.advice) };
+      }
+      aiState = { key: key, state: s.state, advice: s.advice, error: s.error, time: s.time, cached: s.cached, stale: s.stale };
+    }
+    var inner;
+    if (s.state === 'idle') {
+      inner = (s.stale ? '<div class="ai-hint">开支有更新，可重新生成最新建议</div>' : '') +
+        '<button class="ai-btn" id="aiGenBtn">生成 AI 建议</button>' +
+        '<div class="ai-tip">根据本月开支明细，帮你分析可优化的开支并给出下月预算参考</div>';
+    } else if (s.state === 'loading') {
+      inner = '<div class="ai-loading"><i class="ai-spinner"></i><span>AI 正在分析本月开支…</span></div>';
+    } else if (s.state === 'done') {
+      inner = '<div class="ai-advice">' + escapeHtml(s.advice) + '</div>' +
+        '<div class="ai-foot"><span class="ai-time">' + (s.cached ? '上次生成 ' : '生成于 ') + escapeHtml(s.time) + '</span>' +
+        '<span class="ai-regen" id="aiRegen">重新生成</span></div>';
+    } else {
+      inner = '<div class="ai-error">' + escapeHtml(s.error) + '</div>' +
+        '<button class="ai-btn" id="aiGenBtn">重试</button>';
+    }
+    return '<section class="dash-section ai-section">' +
+      '<div class="dash-title">AI 开支建议 <span class="dash-sub">GLM-4-Flash</span></div>' +
+      inner + '</section>';
+  }
+  function genAdviceH5(force, ov, key) {
+    if (!ov) return;
+    if ((!ov.ranked || !ov.ranked.length) && ov.spent <= 0) {
+      aiState = { key: key, state: 'error', advice: '', error: '本周期还没有开支记录，先记几笔再来生成建议吧', time: '', cached: false, stale: false };
+      renderDashboard();
+      return;
+    }
+    var fp = aiFingerprint(ov);
+    if (!force) {
+      var cache = aiGetCache(key);
+      if (cache && cache.fingerprint === fp && cache.advice) {
+        aiState = { key: key, state: 'done', advice: cache.advice, error: '', time: cache.time || '', cached: true, stale: false };
+        renderDashboard();
+        return;
+      }
+    }
+    aiState = { key: key, state: 'loading', advice: '', error: '', time: '', cached: false, stale: false };
+    renderDashboard();
+    fetchAiSummaryH5(key, ov).then(function (res) {
+      var time = aiTimeText(res.generatedAt);
+      aiSetCache(key, { advice: res.advice, fingerprint: fp, time: time });
+      aiState = { key: key, state: 'done', advice: res.advice, error: '', time: time, cached: false, stale: false };
+      renderDashboard();
+    }).catch(function (err) {
+      var msg = (err && err.message) || '生成失败，请重试';
+      if (/failed to fetch|networkerror|load failed/i.test(msg)) msg = '网络连接失败，请检查网络后重试';
+      aiState = { key: key, state: 'error', advice: '', error: msg, time: '', cached: false, stale: false };
+      renderDashboard();
+    });
+  }
+
   function renderDashboard() {
     var view = $('dashView');
     if (!view) return;
@@ -742,6 +854,10 @@
     html += '<section class="dash-section">' +
       '<div class="dash-title">本月开支占比</div>' + rankHtml + '</section>';
 
+    var planned = sum(m.expenses, 'plannedAmount');
+    var ov = { income: income, saving: saving, spent: spent, planned: planned, budget: budget, balance: balance, ranked: ranked };
+    html += aiCardHtml(ov, key);
+
     var months = [];
     var maxVal = 0;
     var ySumInc = 0, ySumSav = 0, ySumExp = 0, activeMonths = 0;
@@ -803,6 +919,11 @@
       rateRows + '</section>';
 
     view.innerHTML = html;
+
+    var genBtn = view.querySelector('#aiGenBtn');
+    if (genBtn) genBtn.addEventListener('click', function () { genAdviceH5(aiState.state === 'error', ov, key); });
+    var regenBtn = view.querySelector('#aiRegen');
+    if (regenBtn) regenBtn.addEventListener('click', function () { genAdviceH5(true, ov, key); });
   }
 
   function statCard(label, value, cls) {

@@ -311,6 +311,52 @@ function cloudPush(bookId, data) {
   });
 }
 
+/* ---------- AI 开支建议 ---------- */
+var AI_PREFIX = 'bookkeeping_ai_advice';
+function aiStorageKey(bookId, key) { return AI_PREFIX + '_' + (bookId || '_none') + '_' + key; }
+function overviewFingerprint(ov) {
+  if (!ov) return '0';
+  var parts = [ov.income, ov.saving, ov.spent, ov.planned, ov.budget];
+  var ranked = ov.ranked || [];
+  for (var i = 0; i < ranked.length; i++) {
+    parts.push(ranked[i].name + ':' + ranked[i].paid);
+    var segs = ranked[i].segments || [];
+    for (var j = 0; j < segs.length; j++) parts.push((segs[j].label || '') + '=' + segs[j].amount);
+  }
+  var s = parts.join('|');
+  var h = 5381;
+  for (var k = 0; k < s.length; k++) h = ((h << 5) + h + s.charCodeAt(k)) | 0;
+  return String(h >>> 0);
+}
+function getAiCache(bookId, key) {
+  try {
+    var raw = wx.getStorageSync(aiStorageKey(bookId, key));
+    if (!raw) return null;
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (e) { return null; }
+}
+function setAiCache(bookId, key, obj) {
+  try { wx.setStorageSync(aiStorageKey(bookId, key), JSON.stringify(obj)); } catch (e) {}
+}
+function fetchAiSummary(key, ov) {
+  return new Promise(function (resolve, reject) {
+    wx.request({
+      url: config.supabaseUrl + '/functions/v1/ai-summary',
+      method: 'POST',
+      header: headers(),
+      data: { monthKey: key, overview: ov },
+      success: function (res) {
+        if (res.statusCode >= 200 && res.statusCode < 300 && res.data && res.data.advice) {
+          resolve(res.data);
+        } else {
+          reject(new Error((res.data && res.data.error) || parseErr(res)));
+        }
+      },
+      fail: function (err) { reject(new Error((err && err.errMsg) || '网络错误')); }
+    });
+  });
+}
+
 module.exports = {
   // 工具
   pad2: pad2, monthKey: monthKey, cycleAnchor: cycleAnchor, cycleRangeText: cycleRangeText,
@@ -331,5 +377,8 @@ module.exports = {
   getSavedBookId: getSavedBookId, setSavedBookId: setSavedBookId,
   // 云端
   cloudEnabled: cloudEnabled, supabaseHost: supabaseHost,
-  cloudFetch: cloudFetch, cloudPush: cloudPush
+  cloudFetch: cloudFetch, cloudPush: cloudPush,
+  // AI 建议
+  fetchAiSummary: fetchAiSummary, overviewFingerprint: overviewFingerprint,
+  getAiCache: getAiCache, setAiCache: setAiCache
 };

@@ -237,3 +237,68 @@
   height: 88rpx;
   line-height: 88rpx;
 }
+
+/* AI 开支建议 */
+.ai-btn {
+  background: var(--primary);
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  height: 84rpx;
+  line-height: 84rpx;
+}
+.ai-tip {
+  font-size: 24rpx;
+  color: var(--text-light);
+  line-height: 1.6;
+  margin-top: 18rpx;
+  text-align: center;
+}
+.ai-hint {
+  font-size: 24rpx;
+  color: var(--expense);
+  margin-bottom: 16rpx;
+  text-align: center;
+}
+.ai-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+  padding: 40rpx 0;
+  color: var(--text-muted);
+  font-size: 26rpx;
+}
+.ai-spinner {
+  width: 36rpx;
+  height: 36rpx;
+  border: 5rpx solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: ai-spin 0.8s linear infinite;
+}
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai-advice {
+  font-size: 27rpx;
+  line-height: 1.75;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid var(--border);
+}
+.ai-time { font-size: 22rpx; color: var(--text-light); }
+.ai-regen { font-size: 26rpx; color: var(--primary); font-weight: 600; }
+.ai-error {
+  font-size: 26rpx;
+  color: var(--danger);
+  line-height: 1.6;
+  margin-bottom: 20rpx;
+}

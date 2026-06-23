@@ -53,6 +53,34 @@
         <view wx:else class="empty">本月暂无开支记录</view>
       </view>
 
+      <view class="card ai-card">
+        <view class="card-title">AI 开支建议 <text class="sub">GLM-4-Flash</text></view>
+
+        <block wx:if="{{ai.state === 'idle'}}">
+          <view wx:if="{{ai.stale}}" class="ai-hint">开支有更新，可重新生成最新建议</view>
+          <button class="ai-btn" bindtap="genAdvice">生成 AI 建议</button>
+          <view class="ai-tip">根据本月开支明细，帮你分析可优化的开支并给出下月预算参考</view>
+        </block>
+
+        <view wx:elif="{{ai.state === 'loading'}}" class="ai-loading">
+          <view class="ai-spinner"></view>
+          <text>AI 正在分析本月开支…</text>
+        </view>
+
+        <block wx:elif="{{ai.state === 'done'}}">
+          <view class="ai-advice">{{ai.advice}}</view>
+          <view class="ai-foot">
+            <text class="ai-time">{{ai.cached ? '上次生成 ' : '生成于 '}}{{ai.time}}</text>
+            <text class="ai-regen" bindtap="genAdvice" data-force="1">重新生成</text>
+          </view>
+        </block>
+
+        <block wx:elif="{{ai.state === 'error'}}">
+          <view class="ai-error">{{ai.error}}</view>
+          <button class="ai-btn" bindtap="genAdvice" data-force="1">重试</button>
+        </block>
+      </view>
+
       <view class="card">
         <view class="card-title">年度复盘 <text class="sub">{{year}}</text></view>
         <view class="year-chart">

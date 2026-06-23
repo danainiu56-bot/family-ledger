@@ -692,3 +692,73 @@ input { font-family: inherit; }
   font-size: 13px;
   padding: 18px 0;
 }
+
+/* AI 开支建议 */
+.ai-btn {
+  display: block;
+  width: 100%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+.ai-btn:hover { background: var(--primary-dark); }
+.ai-tip {
+  font-size: 12px;
+  color: var(--text-light);
+  line-height: 1.6;
+  margin-top: 10px;
+  text-align: center;
+}
+.ai-hint {
+  font-size: 12px;
+  color: var(--expense);
+  margin-bottom: 10px;
+  text-align: center;
+}
+.ai-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 22px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.ai-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  display: inline-block;
+  animation: ai-spin 0.8s linear infinite;
+}
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai-advice {
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.ai-time { font-size: 11px; color: var(--text-light); }
+.ai-regen { font-size: 13px; color: var(--primary); font-weight: 600; cursor: pointer; }
+.ai-error {
+  font-size: 13px;
+  color: var(--danger);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
