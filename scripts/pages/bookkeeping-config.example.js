@@ -7,5 +7,8 @@
 window.BOOKKEEPING_CONFIG = {
   supabaseUrl: '',
   supabaseAnonKey: '',
-  aiSummaryUrl: ''
+  // AI 建议：二选一。填 zhipuApiKey 走智谱直连（国内快）；或填 aiSummaryUrl 走代理。
+  aiSummaryUrl: '',
+  zhipuApiKey: '',
+  zhipuModel: 'glm-4-flash'
 };

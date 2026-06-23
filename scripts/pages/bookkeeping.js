@@ -694,20 +694,73 @@
       return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     } catch (e) { return ''; }
   }
+  var AI_SYSTEM_PROMPT =
+    '你是一位务实、亲切的家庭理财助手。用户会给你本月（按10号账单周期）的家庭收支数据和开支明细。' +
+    '请用简体中文输出，总长度控制在300字以内，分成三个部分，每部分用方括号标题开头：\n' +
+    '[开支概览] 用一两句话总结这个月钱主要花在哪、收支结构是否健康。\n' +
+    '[可优化项] 结合开支明细和备注，指出可能不必要或偏高的开支，给出2-3条具体、可执行的省钱建议；如果开支都合理，就如实说明，不要硬找问题。\n' +
+    '[下月预算建议] 基于本月情况，给出下个月主要开支项的预算参考或一个总预算区间，帮助用户做预算判断。\n' +
+    '语气自然、不说教，不要编造数据中没有的信息，不要使用多余的 Markdown 符号。';
+  function buildAiPrompt(key, ov) {
+    var lines = [];
+    lines.push('统计周期：' + key + '（每月10号到次月10号为一个账单周期）');
+    lines.push('收入：' + fmt(ov.income));
+    lines.push('储蓄：' + fmt(ov.saving));
+    lines.push('已完成开支：' + fmt(ov.spent));
+    lines.push('计划开支：' + fmt(ov.planned));
+    if (ov.budget) lines.push('预算总额：' + fmt(ov.budget));
+    lines.push('本期结余：' + fmt(ov.balance));
+    lines.push('');
+    lines.push('开支明细（按金额从高到低）：');
+    var ranked = ov.ranked || [];
+    if (!ranked.length) {
+      lines.push('（本周期暂无已支出记录）');
+    } else {
+      for (var i = 0; i < ranked.length; i++) {
+        var it = ranked[i];
+        var line = (i + 1) + '. ' + (it.name || '未命名') + '：' + fmt(it.paid);
+        var segs = (it.segments || []).filter(function (s) { return num(s.amount) > 0; });
+        if (segs.length) {
+          line += '（明细：' + segs.map(function (s) {
+            return ((s.label || '').trim() || '未备注') + ' ' + fmt(s.amount);
+          }).join('、') + '）';
+        }
+        lines.push(line);
+      }
+    }
+    return lines.join('\n');
+  }
   function fetchAiSummaryH5(key, ov) {
     var c = getConfig();
-    var url = c.aiSummaryUrl || (c.supabaseUrl + '/functions/v1/ai-summary');
-    var customAiUrl = !!c.aiSummaryUrl;
-    var headers = customAiUrl ? { 'Content-Type': 'application/json' } : supabaseHeaders();
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 30000) : null;
+    var url, headers, body, direct = false;
+    if (c.zhipuApiKey) {
+      direct = true;
+      url = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+      headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.zhipuApiKey };
+      body = JSON.stringify({
+        model: c.zhipuModel || 'glm-4-flash',
+        messages: [{ role: 'system', content: AI_SYSTEM_PROMPT }, { role: 'user', content: buildAiPrompt(key, ov) }],
+        temperature: 0.6, max_tokens: 800
+      });
+    } else {
+      url = c.aiSummaryUrl || (c.supabaseUrl + '/functions/v1/ai-summary');
+      headers = c.aiSummaryUrl ? { 'Content-Type': 'application/json' } : supabaseHeaders();
+      body = JSON.stringify({ monthKey: key, overview: ov });
+    }
     return fetch(url, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({ monthKey: key, overview: ov }),
+      method: 'POST', headers: headers, body: body,
       signal: ctrl ? ctrl.signal : undefined
     }).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (data) {
+        if (direct) {
+          var advice = data && data.choices && data.choices[0] && data.choices[0].message && (data.choices[0].message.content || '').trim();
+          if (!res.ok || !advice) {
+            throw new Error((data && data.error && data.error.message) || ('HTTP ' + res.status));
+          }
+          return { advice: advice, generatedAt: new Date().toISOString() };
+        }
         if (!res.ok || !data || !data.advice) {
           throw new Error((data && data.error) || ('HTTP ' + res.status));
         }
