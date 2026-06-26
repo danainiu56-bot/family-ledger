@@ -30,10 +30,10 @@
       <view class="card">
         <view class="card-title">本月开支占比</view>
         <block wx:if="{{mo.ranked.length}}">
-          <view class="rank-row" wx:for="{{mo.ranked}}" wx:key="name">
+          <view class="rank-row rank-row-clickable" wx:for="{{mo.ranked}}" wx:key="expenseId" bindtap="openExpenseDetail" data-id="{{item.expenseId}}">
             <view class="rank-head">
               <text class="rank-name">{{item.name}}</text>
-              <text>{{item.amount}} <text class="pct">{{item.pct}}%</text></text>
+              <text>{{item.amount}} <text class="pct">{{item.pct}}%</text><text class="rank-chevron"> ›</text></text>
             </view>
             <view class="rank-bar">
               <view class="rank-fill-seg" style="width:{{item.barPct}}%">
@@ -122,4 +122,36 @@
       </view>
     </view>
   </block>
+</view>
+
+<!-- 开支明细 -->
+<view wx:if="{{drawerExpenseDetail}}">
+  <view class="drawer-mask" bindtap="closeExpenseDetail"></view>
+  <view class="drawer" catchtap="noop">
+    <view class="drawer-handle"></view>
+    <view class="drawer-title">{{detailTitle}}</view>
+    <view class="expense-detail-summary">
+      <text>计划 <text class="b">{{detailPlanned}}</text></text>
+      <text>已花 <text class="b">{{detailPaid}}</text></text>
+      <text>剩余 <text class="b">{{detailRemain}}</text></text>
+    </view>
+    <view class="expense-detail-list">
+      <block wx:if="{{detailTimeline.length}}">
+        <view class="expense-detail-row" wx:for="{{detailTimeline}}" wx:for-index="idx" wx:key="idx">
+          <view class="expense-detail-row-main">
+            <text class="expense-detail-amt">{{item.amountText}}</text>
+            <text class="expense-detail-note">{{item.note}}</text>
+          </view>
+          <view class="expense-detail-row-sub">
+            <text class="expense-detail-time">{{item.timeText || '—'}}</text>
+            <text class="expense-detail-remain">剩余 {{item.remainText}}</text>
+          </view>
+        </view>
+      </block>
+      <view wx:else class="expense-detail-empty">暂无支出记录</view>
+    </view>
+    <view class="drawer-actions">
+      <view class="btn btn-cancel" bindtap="closeExpenseDetail">关闭</view>
+    </view>
+  </view>
 </view>

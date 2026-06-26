@@ -589,6 +589,20 @@ input { font-family: inherit; }
 /* 横条排行 */
 .rank-row { margin-bottom: 12px; }
 .rank-row:last-child { margin-bottom: 0; }
+.rank-row-clickable {
+  cursor: pointer;
+  border-radius: 10px;
+  margin-left: -8px;
+  margin-right: -8px;
+  padding: 8px;
+  transition: background .15s;
+}
+.rank-row-clickable:active { background: rgba(99, 102, 241, .08); }
+.rank-chevron {
+  margin-left: 4px;
+  color: var(--text-light);
+  font-size: 14px;
+}
 .rank-row-head {
   display: flex;
   justify-content: space-between;
@@ -786,3 +800,87 @@ input { font-family: inherit; }
   line-height: 1.6;
   margin-bottom: 12px;
 }
+
+/* ---------- 开支明细抽屉 ---------- */
+.expense-detail-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+.expense-detail-summary b { color: var(--text); font-weight: 700; }
+.expense-detail-list { max-height: 50vh; overflow-y: auto; }
+.expense-detail-empty {
+  text-align: center;
+  color: var(--text-light);
+  font-size: 13px;
+  padding: 24px 0;
+}
+.expense-detail-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.expense-detail-row:last-child { border-bottom: none; }
+.expense-detail-row-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.expense-detail-amt { font-size: 15px; font-weight: 700; color: var(--expense); }
+.expense-detail-note { font-size: 13px; color: var(--text); }
+.expense-detail-row-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-light);
+}
+.expense-detail-remain { color: var(--text-muted); }
+
+/* ---------- 开支明细抽屉 ---------- */
+.expense-detail-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+.expense-detail-summary b { color: var(--text); font-weight: 700; }
+.expense-detail-list { max-height: 50vh; overflow-y: auto; }
+.expense-detail-empty {
+  text-align: center;
+  color: var(--text-light);
+  font-size: 13px;
+  padding: 24px 0;
+}
+.expense-detail-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.expense-detail-row:last-child { border-bottom: none; }
+.expense-detail-row-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.expense-detail-amt { font-size: 15px; font-weight: 700; color: var(--expense); }
+.expense-detail-note { font-size: 13px; color: var(--text); }
+.expense-detail-row-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-light);
+}
+.expense-detail-remain { color: var(--text-muted); }

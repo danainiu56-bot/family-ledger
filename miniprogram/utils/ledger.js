@@ -30,6 +30,48 @@ function todayISO() {
   var d = new Date();
   return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
+function nowISO() {
+  return new Date().toISOString();
+}
+function formatPaymentTime(payment) {
+  if (!payment) return '';
+  if (payment.recordedAt) {
+    try {
+      var d = new Date(payment.recordedAt);
+      if (!isNaN(d.getTime())) {
+        return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+      }
+    } catch (e) {}
+  }
+  if (payment.date) {
+    var parts = payment.date.split('-');
+    if (parts.length >= 3) return parts[1] + '-' + parts[2];
+    return payment.date;
+  }
+  return '';
+}
+function buildPaymentTimeline(expense) {
+  if (!expense) return [];
+  var planned = num(expense.plannedAmount);
+  var payments = expense.payments || [];
+  var running = 0;
+  var rows = [];
+  for (var i = 0; i < payments.length; i++) {
+    var p = payments[i];
+    var amt = num(p.amount);
+    if (amt <= 0) continue;
+    running += amt;
+    rows.push({
+      amount: amt,
+      amountText: fmt(amt),
+      note: (p.note || '').trim() || ('第' + (rows.length + 1) + '笔'),
+      timeText: formatPaymentTime(p),
+      remain: Math.max(0, planned - running),
+      remainText: fmt(Math.max(0, planned - running))
+    });
+  }
+  return rows;
+}
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
@@ -173,11 +215,18 @@ function monthOverview(data, key) {
     var segs = [];
     if (ex.payments && ex.payments.length) {
       for (var pi = 0; pi < ex.payments.length; pi++) {
-        var amt = num(ex.payments[pi].amount);
-        if (amt > 0) segs.push({ label: (ex.payments[pi].note || '').trim(), amount: amt });
+        var pay = ex.payments[pi];
+        var amt = num(pay.amount);
+        if (amt > 0) {
+          segs.push({
+            label: (pay.note || '').trim(),
+            amount: amt,
+            timeText: formatPaymentTime(pay)
+          });
+        }
       }
     }
-    ranked.push({ name: ex.name, paid: paid, segments: segs });
+    ranked.push({ expenseId: ex.id, name: ex.name, paid: paid, planned: num(ex.plannedAmount), segments: segs });
   }
   ranked.sort(function (a, b) { return b.paid - a.paid; });
   return {
@@ -423,10 +472,12 @@ function fetchAiSummary(key, ov) {
 module.exports = {
   // 工具
   pad2: pad2, monthKey: monthKey, cycleAnchor: cycleAnchor, cycleRangeText: cycleRangeText,
-  todayISO: todayISO, uid: uid, newBookId: newBookId,
+  todayISO: todayISO, nowISO: nowISO, formatPaymentTime: formatPaymentTime,
+  buildPaymentTimeline: buildPaymentTimeline,
+  uid: uid, newBookId: newBookId,
   num: num, fmt: fmt, normalizeBookId: normalizeBookId, isValidBookId: isValidBookId,
   // 模型
-  emptyMonth: emptyMonth, emptyData: emptyData, getMonth: getMonth,
+  emptyMonth: emptyMonth, emptyData: emptyData, getMonth: getMonth, monthDataOf: monthDataOf,
   // 计算
   sum: sum, expensePaid: expensePaid, expenseStatus: expenseStatus,
   ensurePayments: ensurePayments, expensePaymentCount: expensePaymentCount,

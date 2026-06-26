@@ -50,7 +50,13 @@ Page({
     year: 0,
     mo: { ranked: [] },
     yr: { cols: [], rateRows: [] },
-    ai: { state: 'idle', advice: '', error: '', time: '', cached: false, stale: false }
+    ai: { state: 'idle', advice: '', error: '', time: '', cached: false, stale: false },
+    drawerExpenseDetail: false,
+    detailTitle: '',
+    detailPlanned: '',
+    detailPaid: '',
+    detailRemain: '',
+    detailTimeline: []
   },
 
   onLoad: function () {
@@ -106,6 +112,7 @@ Page({
   },
 
   renderFrom: function (data) {
+    this._data = data;
     var key = L.monthKey(this.cur);
     var year = this.cur.getFullYear();
 
@@ -128,6 +135,7 @@ Page({
         }
       }
       ranked.push({
+        expenseId: it.expenseId,
         name: it.name,
         amount: L.fmt(it.paid),
         pct: o.spent > 0 ? Math.round((it.paid / o.spent) * 100) : 0,
@@ -221,5 +229,33 @@ Page({
       if (/fail|网络|timeout|abort/i.test(msg)) msg = '网络连接失败，请检查网络后重试';
       self.setData({ ai: { state: 'error', advice: '', error: msg, time: '', cached: false, stale: false } });
     });
-  }
+  },
+
+  openExpenseDetail: function (e) {
+    var id = e.currentTarget.dataset.id;
+    if (!id || !this._data) return;
+    var key = L.monthKey(this.cur);
+    var m = L.monthDataOf(this._data, key);
+    var expense = null;
+    for (var i = 0; i < m.expenses.length; i++) {
+      if (m.expenses[i].id === id) { expense = m.expenses[i]; break; }
+    }
+    if (!expense) return;
+    var planned = L.num(expense.plannedAmount);
+    var paid = L.expensePaid(expense);
+    this.setData({
+      drawerExpenseDetail: true,
+      detailTitle: expense.name,
+      detailPlanned: L.fmt(planned),
+      detailPaid: L.fmt(paid),
+      detailRemain: L.fmt(Math.max(0, planned - paid)),
+      detailTimeline: L.buildPaymentTimeline(expense)
+    });
+  },
+
+  closeExpenseDetail: function () {
+    this.setData({ drawerExpenseDetail: false });
+  },
+
+  noop: function () {}
 });

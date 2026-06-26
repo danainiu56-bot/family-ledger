@@ -347,7 +347,7 @@ Page({
         item.date = date;
         item.plannedAmount = planned;
         L.ensurePayments(item);
-        if (paymentAmt > 0) item.payments.push({ id: L.uid(), amount: paymentAmt, date: date });
+        if (paymentAmt > 0) item.payments.push({ id: L.uid(), amount: paymentAmt, date: date, recordedAt: L.nowISO() });
         L.refreshExpenseDone(item);
         item.actualAmount = L.expensePaid(item);
       } else {
@@ -355,7 +355,7 @@ Page({
           id: L.uid(), name: name, plannedAmount: planned, date: date,
           payments: [], done: false, actualAmount: ''
         };
-        if (paymentAmt > 0) newItem.payments.push({ id: L.uid(), amount: paymentAmt, date: date });
+        if (paymentAmt > 0) newItem.payments.push({ id: L.uid(), amount: paymentAmt, date: date, recordedAt: L.nowISO() });
         L.refreshExpenseDone(newItem);
         newItem.actualAmount = L.expensePaid(newItem);
         list.push(newItem);
@@ -416,7 +416,7 @@ Page({
     }
     var paid = L.expensePaid(item);
     var remainder = Math.max(0, planned - paid);
-    if (remainder > 0) item.payments.push({ id: L.uid(), amount: remainder, date: L.todayISO() });
+    if (remainder > 0) item.payments.push({ id: L.uid(), amount: remainder, date: L.todayISO(), recordedAt: L.nowISO() });
     L.refreshExpenseDone(item);
     item.actualAmount = L.expensePaid(item);
     this.save();
@@ -449,7 +449,7 @@ Page({
     var amt = L.num(this.data.pay.amount);
     if (amt <= 0) { wx.showToast({ title: '请输入本次支出金额', icon: 'none' }); return; }
     L.ensurePayments(item);
-    var payRec = { id: L.uid(), amount: amt, date: this.data.pay.date || L.todayISO() };
+    var payRec = { id: L.uid(), amount: amt, date: this.data.pay.date || L.todayISO(), recordedAt: L.nowISO() };
     var note = (this.data.pay.note || '').trim();
     if (note) payRec.note = note;
     item.payments.push(payRec);

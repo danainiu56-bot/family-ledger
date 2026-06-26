@@ -603,6 +603,20 @@ input { font-family: inherit; }
 /* 横条排行 */
 .rank-row { margin-bottom: 12px; }
 .rank-row:last-child { margin-bottom: 0; }
+.rank-row-clickable {
+  cursor: pointer;
+  border-radius: 10px;
+  margin-left: -8px;
+  margin-right: -8px;
+  padding: 8px;
+  transition: background .15s;
+}
+.rank-row-clickable:active { background: rgba(99, 102, 241, .08); }
+.rank-chevron {
+  margin-left: 4px;
+  color: var(--text-light);
+  font-size: 14px;
+}
 .rank-row-head {
   display: flex;
   justify-content: space-between;
@@ -800,6 +814,90 @@ input { font-family: inherit; }
   line-height: 1.6;
   margin-bottom: 12px;
 }
+
+/* ---------- 开支明细抽屉 ---------- */
+.expense-detail-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+.expense-detail-summary b { color: var(--text); font-weight: 700; }
+.expense-detail-list { max-height: 50vh; overflow-y: auto; }
+.expense-detail-empty {
+  text-align: center;
+  color: var(--text-light);
+  font-size: 13px;
+  padding: 24px 0;
+}
+.expense-detail-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.expense-detail-row:last-child { border-bottom: none; }
+.expense-detail-row-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.expense-detail-amt { font-size: 15px; font-weight: 700; color: var(--expense); }
+.expense-detail-note { font-size: 13px; color: var(--text); }
+.expense-detail-row-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-light);
+}
+.expense-detail-remain { color: var(--text-muted); }
+
+/* ---------- 开支明细抽屉 ---------- */
+.expense-detail-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+.expense-detail-summary b { color: var(--text); font-weight: 700; }
+.expense-detail-list { max-height: 50vh; overflow-y: auto; }
+.expense-detail-empty {
+  text-align: center;
+  color: var(--text-light);
+  font-size: 13px;
+  padding: 24px 0;
+}
+.expense-detail-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.expense-detail-row:last-child { border-bottom: none; }
+.expense-detail-row-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.expense-detail-amt { font-size: 15px; font-weight: 700; color: var(--expense); }
+.expense-detail-note { font-size: 13px; color: var(--text); }
+.expense-detail-row-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-light);
+}
+.expense-detail-remain { color: var(--text-muted); }
 
   </style>
 </head>
@@ -1003,6 +1101,21 @@ input { font-family: inherit; }
     </form>
   </div>
 
+  <div class="drawer-mask" id="expenseDetailMask" hidden></div>
+  <div class="drawer drawer-sm" id="expenseDetailDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title" id="expenseDetailTitle">开支明细</h3>
+    <div class="expense-detail-summary">
+      <span>计划 <b id="expenseDetailPlanned">¥0</b></span>
+      <span>已花 <b id="expenseDetailPaid">¥0</b></span>
+      <span>剩余 <b id="expenseDetailRemain">¥0</b></span>
+    </div>
+    <div class="expense-detail-list" id="expenseDetailList"></div>
+    <div class="drawer-actions">
+      <button type="button" class="btn btn-cancel" id="expenseDetailCloseBtn">关闭</button>
+    </div>
+  </div>
+
   <div class="drawer-mask" id="shareMask" hidden></div>
   <div class="drawer drawer-sm" id="shareDrawer" hidden>
     <div class="drawer-handle"></div>
@@ -1102,6 +1215,48 @@ window.BOOKKEEPING_CONFIG = {
   function todayISO() {
     var d = new Date();
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function nowISO() {
+    return new Date().toISOString();
+  }
+  function formatPaymentTime(payment) {
+    if (!payment) return '';
+    if (payment.recordedAt) {
+      try {
+        var d = new Date(payment.recordedAt);
+        if (!isNaN(d.getTime())) {
+          return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+        }
+      } catch (e) {}
+    }
+    if (payment.date) {
+      var parts = payment.date.split('-');
+      if (parts.length >= 3) return parts[1] + '-' + parts[2];
+      return payment.date;
+    }
+    return '';
+  }
+  function buildPaymentTimeline(expense) {
+    if (!expense) return [];
+    var planned = num(expense.plannedAmount);
+    var payments = expense.payments || [];
+    var running = 0;
+    var rows = [];
+    for (var i = 0; i < payments.length; i++) {
+      var p = payments[i];
+      var amt = num(p.amount);
+      if (amt <= 0) continue;
+      running += amt;
+      rows.push({
+        amount: amt,
+        amountText: fmt(amt),
+        note: (p.note || '').trim() || ('第' + (rows.length + 1) + '笔'),
+        timeText: formatPaymentTime(p),
+        remain: Math.max(0, planned - running),
+        remainText: fmt(Math.max(0, planned - running))
+      });
+    }
+    return rows;
   }
   function num(v) {
     var n = parseFloat(v);
@@ -2024,11 +2179,18 @@ window.BOOKKEEPING_CONFIG = {
       var segs = [];
       if (ex.payments && ex.payments.length) {
         for (var pi = 0; pi < ex.payments.length; pi++) {
-          var amt = num(ex.payments[pi].amount);
-          if (amt > 0) segs.push({ label: (ex.payments[pi].note || '').trim(), amount: amt });
+          var pay = ex.payments[pi];
+          var amt = num(pay.amount);
+          if (amt > 0) {
+            segs.push({
+              label: (pay.note || '').trim(),
+              amount: amt,
+              timeText: formatPaymentTime(pay)
+            });
+          }
         }
       }
-      ranked.push({ name: ex.name, paid: paid, segments: segs });
+      ranked.push({ expenseId: ex.id, name: ex.name, paid: paid, segments: segs });
     }
     ranked.sort(function (a, b) { return b.paid - a.paid; });
     var maxPaid = ranked.length ? ranked[0].paid : 0;
@@ -2051,9 +2213,9 @@ window.BOOKKEEPING_CONFIG = {
         } else {
           fillInner = '<i style="width:100%;background:var(--expense)"></i>';
         }
-        rankHtml += '<div class="rank-row">' +
+        rankHtml += '<div class="rank-row rank-row-clickable" data-expense-id="' + escapeHtml(it.expenseId) + '" role="button" tabindex="0">' +
           '<div class="rank-row-head"><span>' + escapeHtml(it.name) + '</span>' +
-          '<span>' + fmt(it.paid) + ' <span class="pct">' + pct(it.paid, spent) + '%</span></span></div>' +
+          '<span>' + fmt(it.paid) + ' <span class="pct">' + pct(it.paid, spent) + '%</span><span class="rank-chevron">›</span></span></div>' +
           '<div class="rank-bar"><div class="rank-fill-seg" style="width:' + Math.max(4, pct(it.paid, maxPaid)) + '%">' + fillInner + '</div></div>' +
           (chips ? '<div class="rank-segs">' + chips + '</div>' : '') +
         '</div>';
@@ -2134,6 +2296,12 @@ window.BOOKKEEPING_CONFIG = {
     if (genBtn) genBtn.addEventListener('click', function () { genAdviceH5(aiState.state === 'error', ov, key); });
     var regenBtn = view.querySelector('#aiRegen');
     if (regenBtn) regenBtn.addEventListener('click', function () { genAdviceH5(true, ov, key); });
+    var rankRows = view.querySelectorAll('.rank-row-clickable[data-expense-id]');
+    for (var ri = 0; ri < rankRows.length; ri++) {
+      rankRows[ri].addEventListener('click', function () {
+        openExpenseDetailDrawer(this.getAttribute('data-expense-id'));
+      });
+    }
   }
 
   function statCard(label, value, cls) {
@@ -2304,7 +2472,7 @@ window.BOOKKEEPING_CONFIG = {
     var paid = expensePaid(item);
     var remainder = Math.max(0, planned - paid);
     if (remainder > 0) {
-      item.payments.push({ id: uid(), amount: remainder, date: todayISO() });
+      item.payments.push({ id: uid(), amount: remainder, date: todayISO(), recordedAt: nowISO() });
     }
     refreshExpenseDone(item);
     item.actualAmount = expensePaid(item);
@@ -2351,6 +2519,45 @@ window.BOOKKEEPING_CONFIG = {
     $('paymentDrawer').hidden = true;
   }
 
+  function openExpenseDetailDrawer(expenseId) {
+    var item = findItem('expenses', expenseId);
+    if (!item) return;
+    var planned = num(item.plannedAmount);
+    var paid = expensePaid(item);
+    var timeline = buildPaymentTimeline(item);
+    $('expenseDetailTitle').textContent = item.name;
+    $('expenseDetailPlanned').textContent = fmt(planned);
+    $('expenseDetailPaid').textContent = fmt(paid);
+    $('expenseDetailRemain').textContent = fmt(Math.max(0, planned - paid));
+    var listEl = $('expenseDetailList');
+    if (!timeline.length) {
+      listEl.innerHTML = '<div class="expense-detail-empty">暂无支出记录</div>';
+    } else {
+      var rows = '';
+      for (var i = 0; i < timeline.length; i++) {
+        var row = timeline[i];
+        rows += '<div class="expense-detail-row">' +
+          '<div class="expense-detail-row-main">' +
+            '<span class="expense-detail-amt">' + escapeHtml(row.amountText) + '</span>' +
+            '<span class="expense-detail-note">' + escapeHtml(row.note) + '</span>' +
+          '</div>' +
+          '<div class="expense-detail-row-sub">' +
+            '<span class="expense-detail-time">' + escapeHtml(row.timeText || '—') + '</span>' +
+            '<span class="expense-detail-remain">剩余 ' + escapeHtml(row.remainText) + '</span>' +
+          '</div>' +
+        '</div>';
+      }
+      listEl.innerHTML = rows;
+    }
+    $('expenseDetailMask').hidden = false;
+    $('expenseDetailDrawer').hidden = false;
+  }
+
+  function closeExpenseDetailDrawer() {
+    $('expenseDetailMask').hidden = true;
+    $('expenseDetailDrawer').hidden = true;
+  }
+
   function submitPayment(e) {
     e.preventDefault();
     var id = state.payingExpenseId;
@@ -2367,7 +2574,8 @@ window.BOOKKEEPING_CONFIG = {
     var pay = {
       id: uid(),
       amount: amt,
-      date: $('fPayDate').value || todayISO()
+      date: $('fPayDate').value || todayISO(),
+      recordedAt: nowISO()
     };
     var note = ($('fPayNote').value || '').trim();
     if (note) pay.note = note;
@@ -2428,7 +2636,7 @@ window.BOOKKEEPING_CONFIG = {
         item.plannedAmount = planned;
         ensurePayments(item);
         if (paymentAmt > 0) {
-          item.payments.push({ id: uid(), amount: paymentAmt, date: date });
+          item.payments.push({ id: uid(), amount: paymentAmt, date: date, recordedAt: nowISO() });
         }
         refreshExpenseDone(item);
         item.actualAmount = expensePaid(item);
@@ -2443,7 +2651,7 @@ window.BOOKKEEPING_CONFIG = {
           actualAmount: ''
         };
         if (paymentAmt > 0) {
-          newItem.payments.push({ id: uid(), amount: paymentAmt, date: date });
+          newItem.payments.push({ id: uid(), amount: paymentAmt, date: date, recordedAt: nowISO() });
         }
         refreshExpenseDone(newItem);
         newItem.actualAmount = expensePaid(newItem);
@@ -2551,6 +2759,9 @@ window.BOOKKEEPING_CONFIG = {
     $('paymentForm').addEventListener('submit', submitPayment);
     $('paymentCancelBtn').addEventListener('click', closePaymentDrawer);
     $('paymentMask').addEventListener('click', closePaymentDrawer);
+
+    $('expenseDetailCloseBtn').addEventListener('click', closeExpenseDetailDrawer);
+    $('expenseDetailMask').addEventListener('click', closeExpenseDetailDrawer);
 
     $('syncRetryBtn').addEventListener('click', retrySync);
     $('shareBookBtn').addEventListener('click', openShareDrawer);

@@ -41,6 +41,48 @@
     var d = new Date();
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   }
+  function nowISO() {
+    return new Date().toISOString();
+  }
+  function formatPaymentTime(payment) {
+    if (!payment) return '';
+    if (payment.recordedAt) {
+      try {
+        var d = new Date(payment.recordedAt);
+        if (!isNaN(d.getTime())) {
+          return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+        }
+      } catch (e) {}
+    }
+    if (payment.date) {
+      var parts = payment.date.split('-');
+      if (parts.length >= 3) return parts[1] + '-' + parts[2];
+      return payment.date;
+    }
+    return '';
+  }
+  function buildPaymentTimeline(expense) {
+    if (!expense) return [];
+    var planned = num(expense.plannedAmount);
+    var payments = expense.payments || [];
+    var running = 0;
+    var rows = [];
+    for (var i = 0; i < payments.length; i++) {
+      var p = payments[i];
+      var amt = num(p.amount);
+      if (amt <= 0) continue;
+      running += amt;
+      rows.push({
+        amount: amt,
+        amountText: fmt(amt),
+        note: (p.note || '').trim() || ('第' + (rows.length + 1) + '笔'),
+        timeText: formatPaymentTime(p),
+        remain: Math.max(0, planned - running),
+        remainText: fmt(Math.max(0, planned - running))
+      });
+    }
+    return rows;
+  }
   function num(v) {
     var n = parseFloat(v);
     return isNaN(n) || n < 0 ? 0 : n;
@@ -962,11 +1004,18 @@
       var segs = [];
       if (ex.payments && ex.payments.length) {
         for (var pi = 0; pi < ex.payments.length; pi++) {
-          var amt = num(ex.payments[pi].amount);
-          if (amt > 0) segs.push({ label: (ex.payments[pi].note || '').trim(), amount: amt });
+          var pay = ex.payments[pi];
+          var amt = num(pay.amount);
+          if (amt > 0) {
+            segs.push({
+              label: (pay.note || '').trim(),
+              amount: amt,
+              timeText: formatPaymentTime(pay)
+            });
+          }
         }
       }
-      ranked.push({ name: ex.name, paid: paid, segments: segs });
+      ranked.push({ expenseId: ex.id, name: ex.name, paid: paid, segments: segs });
     }
     ranked.sort(function (a, b) { return b.paid - a.paid; });
     var maxPaid = ranked.length ? ranked[0].paid : 0;
@@ -989,9 +1038,9 @@
         } else {
           fillInner = '<i style="width:100%;background:var(--expense)"></i>';
         }
-        rankHtml += '<div class="rank-row">' +
+        rankHtml += '<div class="rank-row rank-row-clickable" data-expense-id="' + escapeHtml(it.expenseId) + '" role="button" tabindex="0">' +
           '<div class="rank-row-head"><span>' + escapeHtml(it.name) + '</span>' +
-          '<span>' + fmt(it.paid) + ' <span class="pct">' + pct(it.paid, spent) + '%</span></span></div>' +
+          '<span>' + fmt(it.paid) + ' <span class="pct">' + pct(it.paid, spent) + '%</span><span class="rank-chevron">›</span></span></div>' +
           '<div class="rank-bar"><div class="rank-fill-seg" style="width:' + Math.max(4, pct(it.paid, maxPaid)) + '%">' + fillInner + '</div></div>' +
           (chips ? '<div class="rank-segs">' + chips + '</div>' : '') +
         '</div>';
@@ -1072,6 +1121,12 @@
     if (genBtn) genBtn.addEventListener('click', function () { genAdviceH5(aiState.state === 'error', ov, key); });
     var regenBtn = view.querySelector('#aiRegen');
     if (regenBtn) regenBtn.addEventListener('click', function () { genAdviceH5(true, ov, key); });
+    var rankRows = view.querySelectorAll('.rank-row-clickable[data-expense-id]');
+    for (var ri = 0; ri < rankRows.length; ri++) {
+      rankRows[ri].addEventListener('click', function () {
+        openExpenseDetailDrawer(this.getAttribute('data-expense-id'));
+      });
+    }
   }
 
   function statCard(label, value, cls) {
@@ -1242,7 +1297,7 @@
     var paid = expensePaid(item);
     var remainder = Math.max(0, planned - paid);
     if (remainder > 0) {
-      item.payments.push({ id: uid(), amount: remainder, date: todayISO() });
+      item.payments.push({ id: uid(), amount: remainder, date: todayISO(), recordedAt: nowISO() });
     }
     refreshExpenseDone(item);
     item.actualAmount = expensePaid(item);
@@ -1289,6 +1344,45 @@
     $('paymentDrawer').hidden = true;
   }
 
+  function openExpenseDetailDrawer(expenseId) {
+    var item = findItem('expenses', expenseId);
+    if (!item) return;
+    var planned = num(item.plannedAmount);
+    var paid = expensePaid(item);
+    var timeline = buildPaymentTimeline(item);
+    $('expenseDetailTitle').textContent = item.name;
+    $('expenseDetailPlanned').textContent = fmt(planned);
+    $('expenseDetailPaid').textContent = fmt(paid);
+    $('expenseDetailRemain').textContent = fmt(Math.max(0, planned - paid));
+    var listEl = $('expenseDetailList');
+    if (!timeline.length) {
+      listEl.innerHTML = '<div class="expense-detail-empty">暂无支出记录</div>';
+    } else {
+      var rows = '';
+      for (var i = 0; i < timeline.length; i++) {
+        var row = timeline[i];
+        rows += '<div class="expense-detail-row">' +
+          '<div class="expense-detail-row-main">' +
+            '<span class="expense-detail-amt">' + escapeHtml(row.amountText) + '</span>' +
+            '<span class="expense-detail-note">' + escapeHtml(row.note) + '</span>' +
+          '</div>' +
+          '<div class="expense-detail-row-sub">' +
+            '<span class="expense-detail-time">' + escapeHtml(row.timeText || '—') + '</span>' +
+            '<span class="expense-detail-remain">剩余 ' + escapeHtml(row.remainText) + '</span>' +
+          '</div>' +
+        '</div>';
+      }
+      listEl.innerHTML = rows;
+    }
+    $('expenseDetailMask').hidden = false;
+    $('expenseDetailDrawer').hidden = false;
+  }
+
+  function closeExpenseDetailDrawer() {
+    $('expenseDetailMask').hidden = true;
+    $('expenseDetailDrawer').hidden = true;
+  }
+
   function submitPayment(e) {
     e.preventDefault();
     var id = state.payingExpenseId;
@@ -1305,7 +1399,8 @@
     var pay = {
       id: uid(),
       amount: amt,
-      date: $('fPayDate').value || todayISO()
+      date: $('fPayDate').value || todayISO(),
+      recordedAt: nowISO()
     };
     var note = ($('fPayNote').value || '').trim();
     if (note) pay.note = note;
@@ -1366,7 +1461,7 @@
         item.plannedAmount = planned;
         ensurePayments(item);
         if (paymentAmt > 0) {
-          item.payments.push({ id: uid(), amount: paymentAmt, date: date });
+          item.payments.push({ id: uid(), amount: paymentAmt, date: date, recordedAt: nowISO() });
         }
         refreshExpenseDone(item);
         item.actualAmount = expensePaid(item);
@@ -1381,7 +1476,7 @@
           actualAmount: ''
         };
         if (paymentAmt > 0) {
-          newItem.payments.push({ id: uid(), amount: paymentAmt, date: date });
+          newItem.payments.push({ id: uid(), amount: paymentAmt, date: date, recordedAt: nowISO() });
         }
         refreshExpenseDone(newItem);
         newItem.actualAmount = expensePaid(newItem);
@@ -1489,6 +1584,9 @@
     $('paymentForm').addEventListener('submit', submitPayment);
     $('paymentCancelBtn').addEventListener('click', closePaymentDrawer);
     $('paymentMask').addEventListener('click', closePaymentDrawer);
+
+    $('expenseDetailCloseBtn').addEventListener('click', closeExpenseDetailDrawer);
+    $('expenseDetailMask').addEventListener('click', closeExpenseDetailDrawer);
 
     $('syncRetryBtn').addEventListener('click', retrySync);
     $('shareBookBtn').addEventListener('click', openShareDrawer);

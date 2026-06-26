@@ -230,6 +230,21 @@
     </form>
   </div>
 
+  <div class="drawer-mask" id="expenseDetailMask" hidden></div>
+  <div class="drawer drawer-sm" id="expenseDetailDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title" id="expenseDetailTitle">开支明细</h3>
+    <div class="expense-detail-summary">
+      <span>计划 <b id="expenseDetailPlanned">¥0</b></span>
+      <span>已花 <b id="expenseDetailPaid">¥0</b></span>
+      <span>剩余 <b id="expenseDetailRemain">¥0</b></span>
+    </div>
+    <div class="expense-detail-list" id="expenseDetailList"></div>
+    <div class="drawer-actions">
+      <button type="button" class="btn btn-cancel" id="expenseDetailCloseBtn">关闭</button>
+    </div>
+  </div>
+
   <div class="drawer-mask" id="shareMask" hidden></div>
   <div class="drawer drawer-sm" id="shareDrawer" hidden>
     <div class="drawer-handle"></div>
