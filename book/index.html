@@ -857,6 +857,72 @@ input { font-family: inherit; }
 }
 .expense-detail-remain { color: var(--text-muted); }
 
+.expense-detail-edit {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+.expense-detail-edit-btn {
+  border: 0;
+  background: #eef2ff;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.expense-detail-editor {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+}
+.expense-detail-editor[hidden] { display: none; }
+.expense-detail-note-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.expense-detail-save {
+  border: 0;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.expense-history-notes {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.expense-history-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.expense-history-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.expense-history-row:last-child { border-bottom: none; }
+.expense-history-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
 /* ---------- 开支明细抽屉 ---------- */
 .expense-detail-summary {
   display: flex;
@@ -1055,6 +1121,7 @@ input { font-family: inherit; }
           <span>已支出 <b id="expensePaidText">¥0</b></span>
           <span>剩余 <b id="expenseRemainText">¥0</b></span>
         </div>
+        <div class="expense-history-notes" id="expenseHistoryNotes" hidden></div>
         <label class="field">
           <span class="field-label">本次支出金额</span>
           <input type="text" id="fPayment" inputmode="decimal" placeholder="0.00">
@@ -1083,12 +1150,12 @@ input { font-family: inherit; }
         <span>剩余 <b id="payRemainText">¥0</b></span>
       </div>
       <label class="field">
-        <span class="field-label">本次支出金额</span>
-        <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00">
+        <span class="field-label">本次支出金额（必填）</span>
+        <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00" required>
       </label>
       <label class="field">
-        <span class="field-label">备注</span>
-        <input type="text" id="fPayNote" maxlength="40" placeholder="选填，如：超市买菜">
+        <span class="field-label">备注（必填）</span>
+        <input type="text" id="fPayNote" maxlength="40" placeholder="例如：超市买菜" required>
       </label>
       <label class="field">
         <span class="field-label">日期</span>
@@ -1248,8 +1315,10 @@ window.BOOKKEEPING_CONFIG = {
       if (amt <= 0) continue;
       running += amt;
       rows.push({
+        paymentId: p.id,
         amount: amt,
         amountText: fmt(amt),
+        rawNote: (p.note || '').trim(),
         note: (p.note || '').trim() || ('第' + (rows.length + 1) + '笔'),
         timeText: formatPaymentTime(p),
         remain: Math.max(0, planned - running),
@@ -2485,6 +2554,10 @@ window.BOOKKEEPING_CONFIG = {
     if (!summary) return;
     if (!item) {
       summary.hidden = true;
+      if ($('expenseHistoryNotes')) {
+        $('expenseHistoryNotes').hidden = true;
+        $('expenseHistoryNotes').innerHTML = '';
+      }
       if ($('fPayment')) $('fPayment').value = '';
       return;
     }
@@ -2493,7 +2566,58 @@ window.BOOKKEEPING_CONFIG = {
     var planned = num(item.plannedAmount);
     $('expensePaidText').textContent = fmt(paid);
     $('expenseRemainText').textContent = fmt(Math.max(0, planned - paid));
+    renderExpenseHistoryNotes(item);
     if ($('fPayment')) $('fPayment').value = '';
+  }
+
+  function renderExpenseHistoryNotes(item) {
+    var wrap = $('expenseHistoryNotes');
+    if (!wrap) return;
+    var timeline = buildPaymentTimeline(item);
+    if (!timeline.length) {
+      wrap.hidden = true;
+      wrap.innerHTML = '';
+      return;
+    }
+    wrap.hidden = false;
+    var html = '<div class="expense-history-title">支出历史备注</div>';
+    for (var i = 0; i < timeline.length; i++) {
+      var row = timeline[i];
+      html += '<div class="expense-history-row">' +
+        '<div class="expense-history-main">' +
+          '<span class="expense-detail-amt">' + escapeHtml(row.amountText) + '</span>' +
+          '<span class="expense-detail-note">' + escapeHtml(row.note) + '</span>' +
+        '</div>' +
+        '<div class="expense-detail-row-sub">' +
+          '<span class="expense-detail-time">' + escapeHtml(row.timeText || '—') + '</span>' +
+          '<span class="expense-detail-remain">剩余 ' + escapeHtml(row.remainText) + '</span>' +
+        '</div>' +
+        '<div class="expense-detail-edit" data-payment-id="' + escapeHtml(row.paymentId || '') + '">' +
+          '<button type="button" class="expense-detail-edit-btn">编辑备注</button>' +
+          '<div class="expense-detail-editor" hidden>' +
+            '<input type="text" class="expense-detail-note-input" maxlength="40" value="' + escapeHtml(row.rawNote) + '" placeholder="补充备注">' +
+            '<button type="button" class="expense-detail-save">保存</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
+    wrap.innerHTML = html;
+    var editBtns = wrap.querySelectorAll('.expense-detail-edit-btn');
+    for (var ei = 0; ei < editBtns.length; ei++) {
+      editBtns[ei].addEventListener('click', function () {
+        var parent = this.parentNode;
+        this.hidden = true;
+        parent.querySelector('.expense-detail-editor').hidden = false;
+        parent.querySelector('.expense-detail-note-input').focus();
+      });
+    }
+    var saveBtns = wrap.querySelectorAll('.expense-detail-save');
+    for (var si = 0; si < saveBtns.length; si++) {
+      saveBtns[si].addEventListener('click', function () {
+          var parent = this.parentNode.parentNode;
+          saveEntryPaymentNote(item.id, parent.getAttribute('data-payment-id'), parent.querySelector('.expense-detail-note-input').value);
+      });
+    }
   }
 
   function openPaymentDrawer(id) {
@@ -2545,12 +2669,65 @@ window.BOOKKEEPING_CONFIG = {
             '<span class="expense-detail-time">' + escapeHtml(row.timeText || '—') + '</span>' +
             '<span class="expense-detail-remain">剩余 ' + escapeHtml(row.remainText) + '</span>' +
           '</div>' +
+          '<div class="expense-detail-edit" data-payment-id="' + escapeHtml(row.paymentId || '') + '">' +
+            '<button type="button" class="expense-detail-edit-btn">编辑备注</button>' +
+            '<div class="expense-detail-editor" hidden>' +
+            '<input type="text" class="expense-detail-note-input" maxlength="40" value="' + escapeHtml(row.rawNote) + '" placeholder="补充备注">' +
+            '<button type="button" class="expense-detail-save">保存</button>' +
+            '</div>' +
+          '</div>' +
         '</div>';
       }
       listEl.innerHTML = rows;
+      var editBtns = listEl.querySelectorAll('.expense-detail-edit-btn');
+      for (var ei = 0; ei < editBtns.length; ei++) {
+        editBtns[ei].addEventListener('click', function () {
+          var wrap = this.parentNode;
+          this.hidden = true;
+          wrap.querySelector('.expense-detail-editor').hidden = false;
+          wrap.querySelector('.expense-detail-note-input').focus();
+        });
+      }
+      var saveBtns = listEl.querySelectorAll('.expense-detail-save');
+      for (var bi = 0; bi < saveBtns.length; bi++) {
+        saveBtns[bi].addEventListener('click', function () {
+          var wrap = this.parentNode.parentNode;
+          savePaymentNote(expenseId, wrap.getAttribute('data-payment-id'), wrap.querySelector('.expense-detail-note-input').value);
+        });
+      }
     }
     $('expenseDetailMask').hidden = false;
     $('expenseDetailDrawer').hidden = false;
+  }
+
+  function updatePaymentNote(expenseId, paymentId, note) {
+    var item = findItem('expenses', expenseId);
+    if (!item || !item.payments) return false;
+    for (var i = 0; i < item.payments.length; i++) {
+      if (item.payments[i].id === paymentId) {
+        note = (note || '').trim();
+        if (note) item.payments[i].note = note;
+        else delete item.payments[i].note;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function savePaymentNote(expenseId, paymentId, note) {
+    if (!updatePaymentNote(expenseId, paymentId, note)) return;
+    save();
+    render();
+    openExpenseDetailDrawer(expenseId);
+    showToast('备注已保存');
+  }
+
+  function saveEntryPaymentNote(expenseId, paymentId, note) {
+    if (!updatePaymentNote(expenseId, paymentId, note)) return;
+    save();
+    render();
+    syncExpenseSummary(findItem('expenses', expenseId));
+    showToast('备注已保存');
   }
 
   function closeExpenseDetailDrawer() {
@@ -2570,6 +2747,12 @@ window.BOOKKEEPING_CONFIG = {
       $('fPayAmount').focus();
       return;
     }
+    var note = ($('fPayNote').value || '').trim();
+    if (!note) {
+      showToast('请输入本次支出备注');
+      $('fPayNote').focus();
+      return;
+    }
     ensurePayments(item);
     var pay = {
       id: uid(),
@@ -2577,8 +2760,7 @@ window.BOOKKEEPING_CONFIG = {
       date: $('fPayDate').value || todayISO(),
       recordedAt: nowISO()
     };
-    var note = ($('fPayNote').value || '').trim();
-    if (note) pay.note = note;
+    pay.note = note;
     item.payments.push(pay);
     refreshExpenseDone(item);
     item.actualAmount = expensePaid(item);

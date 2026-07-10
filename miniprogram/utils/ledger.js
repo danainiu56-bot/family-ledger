@@ -62,8 +62,10 @@ function buildPaymentTimeline(expense) {
     if (amt <= 0) continue;
     running += amt;
     rows.push({
+      paymentId: p.id,
       amount: amt,
       amountText: fmt(amt),
+      rawNote: (p.note || '').trim(),
       note: (p.note || '').trim() || ('第' + (rows.length + 1) + '笔'),
       timeText: formatPaymentTime(p),
       remain: Math.max(0, planned - running),

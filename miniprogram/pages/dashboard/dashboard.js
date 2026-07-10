@@ -56,7 +56,10 @@ Page({
     detailPlanned: '',
     detailPaid: '',
     detailRemain: '',
-    detailTimeline: []
+    detailExpenseId: '',
+    detailTimeline: [],
+    editingPaymentId: '',
+    editingNote: ''
   },
 
   onLoad: function () {
@@ -234,6 +237,10 @@ Page({
   openExpenseDetail: function (e) {
     var id = e.currentTarget.dataset.id;
     if (!id || !this._data) return;
+    this.showExpenseDetail(id);
+  },
+
+  showExpenseDetail: function (id) {
     var key = L.monthKey(this.cur);
     var m = L.monthDataOf(this._data, key);
     var expense = null;
@@ -249,12 +256,60 @@ Page({
       detailPlanned: L.fmt(planned),
       detailPaid: L.fmt(paid),
       detailRemain: L.fmt(Math.max(0, planned - paid)),
-      detailTimeline: L.buildPaymentTimeline(expense)
+      detailExpenseId: expense.id,
+      detailTimeline: L.buildPaymentTimeline(expense),
+      editingPaymentId: '',
+      editingNote: ''
     });
   },
 
+  editPaymentNote: function (e) {
+    var item = e.currentTarget.dataset;
+    this.setData({
+      editingPaymentId: item.paymentId || '',
+      editingNote: item.note || ''
+    });
+  },
+
+  onEditNoteInput: function (e) {
+    this.setData({ editingNote: e.detail.value });
+  },
+
+  cancelEditPaymentNote: function () {
+    this.setData({ editingPaymentId: '', editingNote: '' });
+  },
+
+  savePaymentNote: function (e) {
+    var paymentId = e.currentTarget.dataset.paymentId;
+    var expenseId = e.currentTarget.dataset.expenseId;
+    if (!paymentId || !expenseId || !this._data) return;
+    var key = L.monthKey(this.cur);
+    var m = L.monthDataOf(this._data, key);
+    var found = false;
+    for (var i = 0; i < m.expenses.length; i++) {
+      var ex = m.expenses[i];
+      if (ex.id !== expenseId || !ex.payments) continue;
+      for (var j = 0; j < ex.payments.length; j++) {
+        if (ex.payments[j].id === paymentId) {
+          var note = (this.data.editingNote || '').trim();
+          if (note) ex.payments[j].note = note;
+          else delete ex.payments[j].note;
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (!found) return;
+    L.saveLocal(this.bookId, this._data);
+    if (L.cloudEnabled() && this.bookId) L.cloudPush(this.bookId, this._data).catch(function () {});
+    this.renderFrom(this._data);
+    this.showExpenseDetail(expenseId);
+    wx.showToast({ title: '备注已保存', icon: 'none' });
+  },
+
   closeExpenseDetail: function () {
-    this.setData({ drawerExpenseDetail: false });
+    this.setData({ drawerExpenseDetail: false, editingPaymentId: '', editingNote: '' });
   },
 
   noop: function () {}

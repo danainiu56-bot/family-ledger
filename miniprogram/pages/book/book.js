@@ -50,6 +50,9 @@ Page({
     entryEditing: false,
     entryPaidText: '¥0',
     entryRemainText: '¥0',
+    entryTimeline: [],
+    entryNotePaymentId: '',
+    entryNoteDraft: '',
     f: { name: '', amount: '', planned: '', payment: '', date: '' },
 
     // 记支出
@@ -302,6 +305,7 @@ Page({
     var item = id ? this.findItem(type, id) : null;
     var f = { name: '', amount: '', planned: '', payment: '', date: L.todayISO() };
     var paidText = '¥0', remainText = '¥0';
+    var entryTimeline = [];
 
     if (item) {
       f.name = item.name;
@@ -312,6 +316,7 @@ Page({
         var planned = L.num(item.plannedAmount);
         paidText = L.fmt(paid);
         remainText = L.fmt(Math.max(0, planned - paid));
+        entryTimeline = L.buildPaymentTimeline(item);
       } else {
         f.amount = item.amount === 0 ? '0' : (item.amount || '');
       }
@@ -324,8 +329,49 @@ Page({
       entryTitle: (id ? '编辑' : '添加') + titleMap[type],
       entryPaidText: paidText,
       entryRemainText: remainText,
+      entryTimeline: entryTimeline,
+      entryNotePaymentId: '',
+      entryNoteDraft: '',
       f: f
     });
+  },
+
+  editEntryPaymentNote: function (e) {
+    this.setData({
+      entryNotePaymentId: e.currentTarget.dataset.paymentId || '',
+      entryNoteDraft: e.currentTarget.dataset.note || ''
+    });
+  },
+  onEntryNoteInput: function (e) {
+    this.setData({ entryNoteDraft: e.detail.value });
+  },
+  cancelEntryPaymentNote: function () {
+    this.setData({ entryNotePaymentId: '', entryNoteDraft: '' });
+  },
+  saveEntryPaymentNote: function (e) {
+    var ed = this._book.editing;
+    var paymentId = e.currentTarget.dataset.paymentId;
+    if (!ed || ed.type !== 'expenses' || !ed.id || !paymentId) return;
+    var item = this.findItem('expenses', ed.id);
+    if (!item || !item.payments) return;
+    var note = (this.data.entryNoteDraft || '').trim();
+    var found = false;
+    for (var i = 0; i < item.payments.length; i++) {
+      if (item.payments[i].id === paymentId) {
+        if (note) item.payments[i].note = note;
+        else delete item.payments[i].note;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return;
+    this.save();
+    this.setData({
+      entryTimeline: L.buildPaymentTimeline(item),
+      entryNotePaymentId: '',
+      entryNoteDraft: ''
+    });
+    wx.showToast({ title: '备注已保存', icon: 'none' });
   },
 
   submitEntry: function () {
@@ -448,10 +494,11 @@ Page({
     if (!item) return;
     var amt = L.num(this.data.pay.amount);
     if (amt <= 0) { wx.showToast({ title: '请输入本次支出金额', icon: 'none' }); return; }
+    var note = (this.data.pay.note || '').trim();
+    if (!note) { wx.showToast({ title: '请输入本次支出备注', icon: 'none' }); return; }
     L.ensurePayments(item);
     var payRec = { id: L.uid(), amount: amt, date: this.data.pay.date || L.todayISO(), recordedAt: L.nowISO() };
-    var note = (this.data.pay.note || '').trim();
-    if (note) payRec.note = note;
+    payRec.note = note;
     item.payments.push(payRec);
     L.refreshExpenseDone(item);
     item.actualAmount = L.expensePaid(item);

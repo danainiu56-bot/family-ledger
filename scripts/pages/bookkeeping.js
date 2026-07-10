@@ -73,8 +73,10 @@
       if (amt <= 0) continue;
       running += amt;
       rows.push({
+        paymentId: p.id,
         amount: amt,
         amountText: fmt(amt),
+        rawNote: (p.note || '').trim(),
         note: (p.note || '').trim() || ('第' + (rows.length + 1) + '笔'),
         timeText: formatPaymentTime(p),
         remain: Math.max(0, planned - running),
@@ -1310,6 +1312,10 @@
     if (!summary) return;
     if (!item) {
       summary.hidden = true;
+      if ($('expenseHistoryNotes')) {
+        $('expenseHistoryNotes').hidden = true;
+        $('expenseHistoryNotes').innerHTML = '';
+      }
       if ($('fPayment')) $('fPayment').value = '';
       return;
     }
@@ -1318,7 +1324,58 @@
     var planned = num(item.plannedAmount);
     $('expensePaidText').textContent = fmt(paid);
     $('expenseRemainText').textContent = fmt(Math.max(0, planned - paid));
+    renderExpenseHistoryNotes(item);
     if ($('fPayment')) $('fPayment').value = '';
+  }
+
+  function renderExpenseHistoryNotes(item) {
+    var wrap = $('expenseHistoryNotes');
+    if (!wrap) return;
+    var timeline = buildPaymentTimeline(item);
+    if (!timeline.length) {
+      wrap.hidden = true;
+      wrap.innerHTML = '';
+      return;
+    }
+    wrap.hidden = false;
+    var html = '<div class="expense-history-title">支出历史备注</div>';
+    for (var i = 0; i < timeline.length; i++) {
+      var row = timeline[i];
+      html += '<div class="expense-history-row">' +
+        '<div class="expense-history-main">' +
+          '<span class="expense-detail-amt">' + escapeHtml(row.amountText) + '</span>' +
+          '<span class="expense-detail-note">' + escapeHtml(row.note) + '</span>' +
+        '</div>' +
+        '<div class="expense-detail-row-sub">' +
+          '<span class="expense-detail-time">' + escapeHtml(row.timeText || '—') + '</span>' +
+          '<span class="expense-detail-remain">剩余 ' + escapeHtml(row.remainText) + '</span>' +
+        '</div>' +
+        '<div class="expense-detail-edit" data-payment-id="' + escapeHtml(row.paymentId || '') + '">' +
+          '<button type="button" class="expense-detail-edit-btn">编辑备注</button>' +
+          '<div class="expense-detail-editor" hidden>' +
+            '<input type="text" class="expense-detail-note-input" maxlength="40" value="' + escapeHtml(row.rawNote) + '" placeholder="补充备注">' +
+            '<button type="button" class="expense-detail-save">保存</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
+    wrap.innerHTML = html;
+    var editBtns = wrap.querySelectorAll('.expense-detail-edit-btn');
+    for (var ei = 0; ei < editBtns.length; ei++) {
+      editBtns[ei].addEventListener('click', function () {
+        var parent = this.parentNode;
+        this.hidden = true;
+        parent.querySelector('.expense-detail-editor').hidden = false;
+        parent.querySelector('.expense-detail-note-input').focus();
+      });
+    }
+    var saveBtns = wrap.querySelectorAll('.expense-detail-save');
+    for (var si = 0; si < saveBtns.length; si++) {
+      saveBtns[si].addEventListener('click', function () {
+          var parent = this.parentNode.parentNode;
+          saveEntryPaymentNote(item.id, parent.getAttribute('data-payment-id'), parent.querySelector('.expense-detail-note-input').value);
+      });
+    }
   }
 
   function openPaymentDrawer(id) {
@@ -1370,12 +1427,65 @@
             '<span class="expense-detail-time">' + escapeHtml(row.timeText || '—') + '</span>' +
             '<span class="expense-detail-remain">剩余 ' + escapeHtml(row.remainText) + '</span>' +
           '</div>' +
+          '<div class="expense-detail-edit" data-payment-id="' + escapeHtml(row.paymentId || '') + '">' +
+            '<button type="button" class="expense-detail-edit-btn">编辑备注</button>' +
+            '<div class="expense-detail-editor" hidden>' +
+            '<input type="text" class="expense-detail-note-input" maxlength="40" value="' + escapeHtml(row.rawNote) + '" placeholder="补充备注">' +
+            '<button type="button" class="expense-detail-save">保存</button>' +
+            '</div>' +
+          '</div>' +
         '</div>';
       }
       listEl.innerHTML = rows;
+      var editBtns = listEl.querySelectorAll('.expense-detail-edit-btn');
+      for (var ei = 0; ei < editBtns.length; ei++) {
+        editBtns[ei].addEventListener('click', function () {
+          var wrap = this.parentNode;
+          this.hidden = true;
+          wrap.querySelector('.expense-detail-editor').hidden = false;
+          wrap.querySelector('.expense-detail-note-input').focus();
+        });
+      }
+      var saveBtns = listEl.querySelectorAll('.expense-detail-save');
+      for (var bi = 0; bi < saveBtns.length; bi++) {
+        saveBtns[bi].addEventListener('click', function () {
+          var wrap = this.parentNode.parentNode;
+          savePaymentNote(expenseId, wrap.getAttribute('data-payment-id'), wrap.querySelector('.expense-detail-note-input').value);
+        });
+      }
     }
     $('expenseDetailMask').hidden = false;
     $('expenseDetailDrawer').hidden = false;
+  }
+
+  function updatePaymentNote(expenseId, paymentId, note) {
+    var item = findItem('expenses', expenseId);
+    if (!item || !item.payments) return false;
+    for (var i = 0; i < item.payments.length; i++) {
+      if (item.payments[i].id === paymentId) {
+        note = (note || '').trim();
+        if (note) item.payments[i].note = note;
+        else delete item.payments[i].note;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function savePaymentNote(expenseId, paymentId, note) {
+    if (!updatePaymentNote(expenseId, paymentId, note)) return;
+    save();
+    render();
+    openExpenseDetailDrawer(expenseId);
+    showToast('备注已保存');
+  }
+
+  function saveEntryPaymentNote(expenseId, paymentId, note) {
+    if (!updatePaymentNote(expenseId, paymentId, note)) return;
+    save();
+    render();
+    syncExpenseSummary(findItem('expenses', expenseId));
+    showToast('备注已保存');
   }
 
   function closeExpenseDetailDrawer() {
@@ -1395,6 +1505,12 @@
       $('fPayAmount').focus();
       return;
     }
+    var note = ($('fPayNote').value || '').trim();
+    if (!note) {
+      showToast('请输入本次支出备注');
+      $('fPayNote').focus();
+      return;
+    }
     ensurePayments(item);
     var pay = {
       id: uid(),
@@ -1402,8 +1518,7 @@
       date: $('fPayDate').value || todayISO(),
       recordedAt: nowISO()
     };
-    var note = ($('fPayNote').value || '').trim();
-    if (note) pay.note = note;
+    pay.note = note;
     item.payments.push(pay);
     refreshExpenseDone(item);
     item.actualAmount = expensePaid(item);

@@ -146,6 +146,14 @@
             <text class="expense-detail-time">{{item.timeText || '—'}}</text>
             <text class="expense-detail-remain">剩余 {{item.remainText}}</text>
           </view>
+          <view wx:if="{{editingPaymentId === item.paymentId}}" class="expense-note-editor">
+            <input class="expense-note-input" value="{{editingNote}}" maxlength="40" placeholder="补充备注" bindinput="onEditNoteInput" />
+            <view class="expense-note-actions">
+              <view class="expense-note-cancel" bindtap="cancelEditPaymentNote">取消</view>
+              <view class="expense-note-save" bindtap="savePaymentNote" data-payment-id="{{item.paymentId}}" data-expense-id="{{detailExpenseId}}">保存</view>
+            </view>
+          </view>
+          <view wx:else class="expense-note-edit-btn" bindtap="editPaymentNote" data-payment-id="{{item.paymentId}}" data-note="{{item.rawNote}}">编辑备注</view>
         </view>
       </block>
       <view wx:else class="expense-detail-empty">暂无支出记录</view>

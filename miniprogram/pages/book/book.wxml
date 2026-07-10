@@ -164,6 +164,27 @@
           <text>已支出 <text class="b">{{entryPaidText}}</text></text>
           <text>剩余 <text class="b">{{entryRemainText}}</text></text>
         </view>
+        <view wx:if="{{entryEditing && entryTimeline.length}}" class="expense-history-notes">
+          <view class="expense-history-title">支出历史备注</view>
+          <view class="expense-history-row" wx:for="{{entryTimeline}}" wx:key="paymentId">
+            <view class="expense-history-main">
+              <text class="expense-history-amt">{{item.amountText}}</text>
+              <text class="expense-history-note">{{item.note}}</text>
+            </view>
+            <view class="expense-history-sub">
+              <text>{{item.timeText || '—'}}</text>
+              <text>剩余 {{item.remainText}}</text>
+            </view>
+            <view wx:if="{{entryNotePaymentId === item.paymentId}}" class="expense-note-editor">
+              <input class="expense-note-input" value="{{entryNoteDraft}}" maxlength="40" placeholder="补充备注" bindinput="onEntryNoteInput" />
+              <view class="expense-note-actions">
+                <view class="expense-note-cancel" bindtap="cancelEntryPaymentNote">取消</view>
+                <view class="expense-note-save" bindtap="saveEntryPaymentNote" data-payment-id="{{item.paymentId}}">保存</view>
+              </view>
+            </view>
+            <view wx:else class="expense-note-edit-btn" bindtap="editEntryPaymentNote" data-payment-id="{{item.paymentId}}" data-note="{{item.rawNote}}">编辑备注</view>
+          </view>
+        </view>
         <view class="field">
           <text class="field-label">本次支出金额</text>
           <input class="input" type="digit" value="{{f.payment}}" placeholder="0.00" data-k="payment" bindinput="onInput" />
@@ -199,12 +220,12 @@
         <text>剩余 <text class="b">{{payRemainText}}</text></text>
       </view>
       <view class="field">
-        <text class="field-label">本次支出金额</text>
+        <text class="field-label">本次支出金额（必填）</text>
         <input class="input" type="digit" value="{{pay.amount}}" placeholder="0.00" data-k="payAmount" bindinput="onInput" />
       </view>
       <view class="field">
-        <text class="field-label">备注</text>
-        <input class="input" type="text" maxlength="40" value="{{pay.note}}" placeholder="选填，如：超市买菜" data-k="payNote" bindinput="onInput" />
+        <text class="field-label">备注（必填）</text>
+        <input class="input" type="text" maxlength="40" value="{{pay.note}}" placeholder="例如：超市买菜" data-k="payNote" bindinput="onInput" />
       </view>
       <view class="field">
         <text class="field-label">日期</text>

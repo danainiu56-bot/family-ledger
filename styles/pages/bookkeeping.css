@@ -843,6 +843,72 @@ input { font-family: inherit; }
 }
 .expense-detail-remain { color: var(--text-muted); }
 
+.expense-detail-edit {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+.expense-detail-edit-btn {
+  border: 0;
+  background: #eef2ff;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.expense-detail-editor {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+}
+.expense-detail-editor[hidden] { display: none; }
+.expense-detail-note-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.expense-detail-save {
+  border: 0;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.expense-history-notes {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.expense-history-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.expense-history-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.expense-history-row:last-child { border-bottom: none; }
+.expense-history-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
 /* ---------- 开支明细抽屉 ---------- */
 .expense-detail-summary {
   display: flex;

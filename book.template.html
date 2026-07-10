@@ -184,6 +184,7 @@
           <span>已支出 <b id="expensePaidText">¥0</b></span>
           <span>剩余 <b id="expenseRemainText">¥0</b></span>
         </div>
+        <div class="expense-history-notes" id="expenseHistoryNotes" hidden></div>
         <label class="field">
           <span class="field-label">本次支出金额</span>
           <input type="text" id="fPayment" inputmode="decimal" placeholder="0.00">
@@ -212,12 +213,12 @@
         <span>剩余 <b id="payRemainText">¥0</b></span>
       </div>
       <label class="field">
-        <span class="field-label">本次支出金额</span>
-        <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00">
+        <span class="field-label">本次支出金额（必填）</span>
+        <input type="text" id="fPayAmount" inputmode="decimal" placeholder="0.00" required>
       </label>
       <label class="field">
-        <span class="field-label">备注</span>
-        <input type="text" id="fPayNote" maxlength="40" placeholder="选填，如：超市买菜">
+        <span class="field-label">备注（必填）</span>
+        <input type="text" id="fPayNote" maxlength="40" placeholder="例如：超市买菜" required>
       </label>
       <label class="field">
         <span class="field-label">日期</span>
