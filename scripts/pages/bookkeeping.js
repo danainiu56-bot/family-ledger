@@ -886,17 +886,6 @@
     for (var i = 0; i < expenses.length; i++) t += expensePaid(expenses[i]);
     return t;
   }
-  /** 预计周期末开支：按项汇总（有计划取 max(计划,已付)，无计划取已付），不含储蓄 */
-  function forecastExpenseTotal(expenses) {
-    var t = 0;
-    for (var i = 0; i < (expenses || []).length; i++) {
-      var item = expenses[i];
-      var planned = num(item.plannedAmount);
-      var paid = expensePaid(item);
-      t += planned > 0 ? Math.max(planned, paid) : paid;
-    }
-    return t;
-  }
   function calcActualSpent(m) {
     return sum(m.savings, 'amount') + completedExpenseTotal(m.expenses);
   }
@@ -929,7 +918,7 @@
   function monthDataReadonly(key) {
     return state.data.months[key] || { income: [], savings: [], expenses: [] };
   }
-  function cycleMetrics(current, spent, budget, expenseForecast) {
+  function cycleMetrics(current, spent, budget) {
     var start = new Date(current.getFullYear(), current.getMonth(), CYCLE_START_DAY);
     var end = new Date(current.getFullYear(), current.getMonth() + 1, CYCLE_START_DAY);
     var today = new Date();
@@ -939,14 +928,15 @@
     var remainingDays = today >= end ? 0 : (today <= start ? totalDays : Math.max(0, Math.ceil((end - today) / dayMs)));
     var remainingBudget = budget - spent;
     var dailyAvailable = remainingDays > 0 ? Math.max(0, remainingBudget / remainingDays) : 0;
-    var forecast = expenseForecast == null ? 0 : expenseForecast;
+    // 预计周期末开支 = 今日建议可花 × 剩余天数
+    var forecast = dailyAvailable * remainingDays;
     var risk = { level: 'safe', label: '节奏健康', note: '当前支出速度在预算内' };
     if (budget <= 0) {
       risk = { level: 'neutral', label: '未设预算', note: '设置预算后可判断超支风险' };
-    } else if (remainingBudget < 0 || forecast > budget * 1.08) {
-      risk = { level: 'high', label: '超支风险高', note: '按计划开支预计超过预算' };
-    } else if (forecast > budget * 0.92) {
-      risk = { level: 'watch', label: '需要关注', note: '预计接近本周期预算上限' };
+    } else if (remainingBudget < 0) {
+      risk = { level: 'high', label: '超支风险高', note: '已超过本周期预算' };
+    } else if (budget > 0 && spent > budget * 0.92) {
+      risk = { level: 'watch', label: '需要关注', note: '已接近本周期预算上限' };
     }
     return {
       totalDays: totalDays,
@@ -1356,8 +1346,7 @@
     var balance = income - actualSpent;
     var execPct = budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0;
     var execOver = budget > 0 && actualSpent > budget;
-    var expenseForecast = forecastExpenseTotal(m.expenses);
-    var forecast = cycleMetrics(state.current, actualSpent, budget, expenseForecast);
+    var forecast = cycleMetrics(state.current, actualSpent, budget);
 
     var html = '';
     html += '<section class="finance-cockpit">' +
@@ -1368,7 +1357,7 @@
           '<div><b>' + execPct + '%</b><span>预算已用</span></div></div></div>' +
       '<div class="cockpit-grid">' +
         '<div><span>今日建议可花</span><b>' + fmt(forecast.dailyAvailable) + '</b></div>' +
-        '<div><span>预计周期末开支</span><b>' + fmt(forecast.forecast) + '</b><small>按计划</small></div>' +
+        '<div><span>预计周期末开支</span><b>' + fmt(forecast.forecast) + '</b><small>日额×天数</small></div>' +
       '</div>' +
       '<div class="risk-banner ' + forecast.risk.level + '"><i></i><div><b>' + forecast.risk.label + '</b><span>' + forecast.risk.note + '</span></div></div>' +
       '<div class="cockpit-mini"><span>收入 <b class="income">' + fmt(income) + '</b></span><span>储蓄 <b class="saving">' + fmt(saving) +
