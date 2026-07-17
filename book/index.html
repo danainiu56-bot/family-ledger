@@ -2591,6 +2591,7 @@ window.BOOKKEEPING_CONFIG = {
     var remainingDays = today >= end ? 0 : (today <= start ? totalDays : Math.max(0, Math.ceil((end - today) / dayMs)));
     var remainingBudget = budget - spent;
     var prediction = forecastExpenses(current, expenses, elapsedDays, remainingDays);
+    var availableDaily = remainingDays > 0 ? Math.max(0, remainingBudget) / remainingDays : 0;
     var dailyAvailable = remainingDays > 0
       ? Math.max(0, remainingBudget - prediction.fixedRemaining) / remainingDays
       : 0;
@@ -2612,6 +2613,7 @@ window.BOOKKEEPING_CONFIG = {
       elapsedDays: elapsedDays,
       remainingDays: remainingDays,
       remainingBudget: remainingBudget,
+      availableDaily: availableDaily,
       dailyAvailable: dailyAvailable,
       forecast: prediction.total,
       forecastRemaining: prediction.remaining,
@@ -3031,8 +3033,7 @@ window.BOOKKEEPING_CONFIG = {
           '<div><b>' + execPct + '%</b><span>预算已用</span></div></div></div>' +
       '<div class="cockpit-grid">' +
         '<div><span>今日建议可花</span><b>' + fmt(forecast.dailyAvailable) + '</b></div>' +
-        '<div><span>本周期待付</span><b>' + fmt(forecast.fixedRemaining) + '</b><small>计划 ' +
-          fmt(forecast.fixedPlanned) + ' / 已付 ' + fmt(forecast.fixedPaid) + '</small></div>' +
+        '<div><span>每天可用余额</span><b>' + fmt(forecast.availableDaily) + '</b><small>可用余额 ÷ 可用天数</small></div>' +
       '</div>' +
       '<div class="risk-banner ' + forecast.risk.level + '"><i></i><div><b>' + forecast.risk.label + '</b><span>' + forecast.risk.note + '</span></div></div>' +
       '<div class="cockpit-mini"><span>收入 <b class="income">' + fmt(income) + '</b></span><span>储蓄 <b class="saving">' + fmt(saving) +
