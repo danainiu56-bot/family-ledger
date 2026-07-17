@@ -886,6 +886,61 @@
     for (var i = 0; i < expenses.length; i++) t += expensePaid(expenses[i]);
     return t;
   }
+  function quickExpenseTotal(expenses) {
+    var t = 0;
+    for (var i = 0; i < (expenses || []).length; i++) {
+      if (expenses[i].source === 'quick') t += expensePaid(expenses[i]);
+    }
+    return t;
+  }
+  function historicalQuickDaily(current) {
+    var quickTotal = 0;
+    var dayTotal = 0;
+    for (var offset = 1; offset <= 3; offset++) {
+      var d = new Date(current.getFullYear(), current.getMonth() - offset, 1);
+      var month = state.data.months && state.data.months[monthKey(d)];
+      if (!month || !(month.expenses || []).some(function (item) { return item.source === 'quick'; })) continue;
+      quickTotal += quickExpenseTotal(month.expenses);
+      dayTotal += Math.round((
+        new Date(d.getFullYear(), d.getMonth() + 1, CYCLE_START_DAY) -
+        new Date(d.getFullYear(), d.getMonth(), CYCLE_START_DAY)
+      ) / (24 * 60 * 60 * 1000));
+    }
+    return { hasData: dayTotal > 0, daily: dayTotal > 0 ? quickTotal / dayTotal : 0 };
+  }
+  function forecastExpenses(current, expenses, elapsedDays, remainingDays) {
+    var fixedExpected = 0;
+    var fixedRemaining = 0;
+    var quickSpent = 0;
+    for (var i = 0; i < (expenses || []).length; i++) {
+      var item = expenses[i];
+      var paid = expensePaid(item);
+      if (item.source === 'quick') {
+        quickSpent += paid;
+      } else {
+        var planned = num(item.plannedAmount);
+        fixedExpected += Math.max(planned, paid);
+        fixedRemaining += Math.max(planned - paid, 0);
+      }
+    }
+
+    var history = historicalQuickDaily(current);
+    var currentDaily = elapsedDays > 0 ? quickSpent / elapsedDays : 0;
+    var quickDaily = history.hasData
+      ? (quickSpent + history.daily * 7) / (elapsedDays + 7)
+      : currentDaily;
+    var quickRemaining = quickDaily * remainingDays;
+
+    return {
+      fixedExpected: fixedExpected,
+      fixedRemaining: fixedRemaining,
+      quickSpent: quickSpent,
+      quickDaily: quickDaily,
+      quickRemaining: quickRemaining,
+      total: fixedExpected + quickSpent + quickRemaining,
+      remaining: fixedRemaining + quickRemaining
+    };
+  }
   function calcActualSpent(m) {
     return sum(m.savings, 'amount') + completedExpenseTotal(m.expenses);
   }
@@ -918,7 +973,7 @@
   function monthDataReadonly(key) {
     return state.data.months[key] || { income: [], savings: [], expenses: [] };
   }
-  function cycleMetrics(current, spent, budget) {
+  function cycleMetrics(current, spent, budget, expenses) {
     var start = new Date(current.getFullYear(), current.getMonth(), CYCLE_START_DAY);
     var end = new Date(current.getFullYear(), current.getMonth() + 1, CYCLE_START_DAY);
     var today = new Date();
@@ -927,16 +982,22 @@
     var elapsedDays = today <= start ? 0 : (today >= end ? totalDays : Math.max(1, Math.ceil((today - start) / dayMs)));
     var remainingDays = today >= end ? 0 : (today <= start ? totalDays : Math.max(0, Math.ceil((end - today) / dayMs)));
     var remainingBudget = budget - spent;
-    var dailyAvailable = remainingDays > 0 ? Math.max(0, remainingBudget / remainingDays) : 0;
-    // 预计周期末开支 = 今日建议可花 × 剩余天数
-    var forecast = dailyAvailable * remainingDays;
-    var risk = { level: 'safe', label: '节奏健康', note: '当前支出速度在预算内' };
+    var prediction = forecastExpenses(current, expenses, elapsedDays, remainingDays);
+    var dailyAvailable = remainingDays > 0
+      ? Math.max(0, remainingBudget - prediction.fixedRemaining) / remainingDays
+      : 0;
+    var projectedBalance = remainingBudget - prediction.remaining;
+    var risk = {
+      level: 'safe',
+      label: '余额够用',
+      note: '预计期末剩余 ' + fmt(Math.max(0, projectedBalance))
+    };
     if (budget <= 0) {
       risk = { level: 'neutral', label: '未设预算', note: '设置预算后可判断超支风险' };
-    } else if (remainingBudget < 0) {
-      risk = { level: 'high', label: '超支风险高', note: '已超过本周期预算' };
-    } else if (budget > 0 && spent > budget * 0.92) {
-      risk = { level: 'watch', label: '需要关注', note: '已接近本周期预算上限' };
+    } else if (projectedBalance < 0) {
+      risk = { level: 'high', label: '余额不足', note: '预计还差 ' + fmt(Math.abs(projectedBalance)) };
+    } else if (remainingBudget > 0 && projectedBalance < remainingBudget * 0.1) {
+      risk = { level: 'watch', label: '需要关注', note: '预计期末仅剩 ' + fmt(projectedBalance) };
     }
     return {
       totalDays: totalDays,
@@ -944,7 +1005,9 @@
       remainingDays: remainingDays,
       remainingBudget: remainingBudget,
       dailyAvailable: dailyAvailable,
-      forecast: forecast,
+      forecast: prediction.total,
+      forecastRemaining: prediction.remaining,
+      projectedBalance: projectedBalance,
       risk: risk
     };
   }
@@ -1346,7 +1409,7 @@
     var balance = income - actualSpent;
     var execPct = budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0;
     var execOver = budget > 0 && actualSpent > budget;
-    var forecast = cycleMetrics(state.current, actualSpent, budget);
+    var forecast = cycleMetrics(state.current, actualSpent, budget, m.expenses);
 
     var html = '';
     html += '<section class="finance-cockpit">' +
@@ -1357,7 +1420,7 @@
           '<div><b>' + execPct + '%</b><span>预算已用</span></div></div></div>' +
       '<div class="cockpit-grid">' +
         '<div><span>今日建议可花</span><b>' + fmt(forecast.dailyAvailable) + '</b></div>' +
-        '<div><span>预计周期末开支</span><b>' + fmt(forecast.forecast) + '</b><small>日额×天数</small></div>' +
+        '<div><span>预计周期末开支</span><b>' + fmt(forecast.forecast) + '</b><small>计划+日常预测</small></div>' +
       '</div>' +
       '<div class="risk-banner ' + forecast.risk.level + '"><i></i><div><b>' + forecast.risk.label + '</b><span>' + forecast.risk.note + '</span></div></div>' +
       '<div class="cockpit-mini"><span>收入 <b class="income">' + fmt(income) + '</b></span><span>储蓄 <b class="saving">' + fmt(saving) +
