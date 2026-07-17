@@ -918,7 +918,7 @@
   function monthDataReadonly(key) {
     return state.data.months[key] || { income: [], savings: [], expenses: [] };
   }
-  function cycleMetrics(current, spent, budget) {
+  function cycleMetrics(current, spent, budget, paceSpent) {
     var start = new Date(current.getFullYear(), current.getMonth(), CYCLE_START_DAY);
     var end = new Date(current.getFullYear(), current.getMonth() + 1, CYCLE_START_DAY);
     var today = new Date();
@@ -928,7 +928,9 @@
     var remainingDays = today >= end ? 0 : (today <= start ? totalDays : Math.max(0, Math.ceil((end - today) / dayMs)));
     var remainingBudget = budget - spent;
     var dailyAvailable = remainingDays > 0 ? Math.max(0, remainingBudget / remainingDays) : 0;
-    var forecast = elapsedDays > 0 ? spent / elapsedDays * totalDays : spent;
+    // 预计周期末开支：只按已完成开支速度外推，不含储蓄
+    var burnBase = paceSpent == null ? spent : paceSpent;
+    var forecast = elapsedDays > 0 ? burnBase / elapsedDays * totalDays : burnBase;
     var risk = { level: 'safe', label: '节奏健康', note: '当前支出速度在预算内' };
     if (budget <= 0) {
       risk = { level: 'neutral', label: '未设预算', note: '设置预算后可判断超支风险' };
@@ -1345,7 +1347,7 @@
     var balance = income - actualSpent;
     var execPct = budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0;
     var execOver = budget > 0 && actualSpent > budget;
-    var forecast = cycleMetrics(state.current, actualSpent, budget);
+    var forecast = cycleMetrics(state.current, actualSpent, budget, spent);
 
     var html = '';
     html += '<section class="finance-cockpit">' +
