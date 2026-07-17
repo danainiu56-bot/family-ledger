@@ -910,6 +910,8 @@
   }
   function forecastExpenses(current, expenses, elapsedDays, remainingDays) {
     var fixedExpected = 0;
+    var fixedPlanned = 0;
+    var fixedPaid = 0;
     var fixedRemaining = 0;
     var quickSpent = 0;
     for (var i = 0; i < (expenses || []).length; i++) {
@@ -919,6 +921,8 @@
         quickSpent += paid;
       } else {
         var planned = num(item.plannedAmount);
+        fixedPlanned += planned;
+        fixedPaid += paid;
         fixedExpected += Math.max(planned, paid);
         fixedRemaining += Math.max(planned - paid, 0);
       }
@@ -933,6 +937,8 @@
 
     return {
       fixedExpected: fixedExpected,
+      fixedPlanned: fixedPlanned,
+      fixedPaid: fixedPaid,
       fixedRemaining: fixedRemaining,
       quickSpent: quickSpent,
       quickDaily: quickDaily,
@@ -986,18 +992,18 @@
     var dailyAvailable = remainingDays > 0
       ? Math.max(0, remainingBudget - prediction.fixedRemaining) / remainingDays
       : 0;
-    var projectedBalance = remainingBudget - prediction.remaining;
+    var projectedBalance = remainingBudget - prediction.fixedRemaining;
     var risk = {
       level: 'safe',
       label: '余额够用',
-      note: '预计期末剩余 ' + fmt(Math.max(0, projectedBalance))
+      note: '付完计划后剩余 ' + fmt(Math.max(0, projectedBalance))
     };
     if (budget <= 0) {
       risk = { level: 'neutral', label: '未设预算', note: '设置预算后可判断超支风险' };
     } else if (projectedBalance < 0) {
-      risk = { level: 'high', label: '余额不足', note: '预计还差 ' + fmt(Math.abs(projectedBalance)) };
+      risk = { level: 'high', label: '余额不足', note: '固定待付仍差 ' + fmt(Math.abs(projectedBalance)) };
     } else if (remainingBudget > 0 && projectedBalance < remainingBudget * 0.1) {
-      risk = { level: 'watch', label: '需要关注', note: '预计期末仅剩 ' + fmt(projectedBalance) };
+      risk = { level: 'watch', label: '需要关注', note: '付完计划后仅剩 ' + fmt(projectedBalance) };
     }
     return {
       totalDays: totalDays,
@@ -1007,6 +1013,9 @@
       dailyAvailable: dailyAvailable,
       forecast: prediction.total,
       forecastRemaining: prediction.remaining,
+      fixedPlanned: prediction.fixedPlanned,
+      fixedPaid: prediction.fixedPaid,
+      fixedRemaining: prediction.fixedRemaining,
       projectedBalance: projectedBalance,
       risk: risk
     };
@@ -1420,7 +1429,8 @@
           '<div><b>' + execPct + '%</b><span>预算已用</span></div></div></div>' +
       '<div class="cockpit-grid">' +
         '<div><span>今日建议可花</span><b>' + fmt(forecast.dailyAvailable) + '</b></div>' +
-        '<div><span>预计周期末开支</span><b>' + fmt(forecast.forecast) + '</b><small>计划+日常预测</small></div>' +
+        '<div><span>本周期待付</span><b>' + fmt(forecast.fixedRemaining) + '</b><small>计划 ' +
+          fmt(forecast.fixedPlanned) + ' / 已付 ' + fmt(forecast.fixedPaid) + '</small></div>' +
       '</div>' +
       '<div class="risk-banner ' + forecast.risk.level + '"><i></i><div><b>' + forecast.risk.label + '</b><span>' + forecast.risk.note + '</span></div></div>' +
       '<div class="cockpit-mini"><span>收入 <b class="income">' + fmt(income) + '</b></span><span>储蓄 <b class="saving">' + fmt(saving) +
