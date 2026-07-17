@@ -48,6 +48,7 @@
           <span class="sync-dot" id="syncDot"></span>
           <span class="sync-status" id="syncStatusText"></span>
         </span>
+        <button type="button" class="book-btn member-btn" id="memberBookBtn">成员</button>
         <button type="button" class="book-btn" id="shareBookBtn">分享</button>
         <button type="button" class="book-btn" id="switchBookBtn">切换</button>
       </div>
@@ -135,6 +136,10 @@
         </svg>
         <span class="tab-text">首页</span>
       </button>
+      <button type="button" class="quick-tab-btn" id="quickEntryBtn" aria-label="快速记一笔">
+        <span class="quick-tab-plus">＋</span>
+        <span>记一笔</span>
+      </button>
       <button type="button" class="tab-item" data-tab="plan" aria-label="计划">
         <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
           <path d="M6 3h9l5 5v13H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -143,6 +148,45 @@
         <span class="tab-text">计划</span>
       </button>
     </nav>
+  </div>
+
+  <div class="drawer-mask" id="quickEntryMask" hidden></div>
+  <div class="drawer quick-entry-drawer" id="quickEntryDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <div class="quick-entry-head">
+      <div>
+        <h3 class="drawer-title">记一笔支出</h3>
+        <p class="drawer-desc">不关联计划也可以直接记录</p>
+      </div>
+      <span class="quick-member-pill" id="quickMemberPill"></span>
+    </div>
+    <form id="quickEntryForm" class="drawer-form">
+      <div class="quick-chips" id="quickChips"></div>
+      <label class="field quick-amount-field">
+        <span class="field-label">金额（必填）</span>
+        <div class="quick-amount-wrap"><span>¥</span><input type="text" id="fQuickAmount" inputmode="decimal" placeholder="0.00" required></div>
+      </label>
+      <label class="field">
+        <span class="field-label">备注（必填）</span>
+        <input type="text" id="fQuickNote" maxlength="40" placeholder="例如：午餐、加油" required>
+      </label>
+      <label class="field">
+        <span class="field-label">付款人</span>
+        <select id="fQuickMember"></select>
+      </label>
+      <label class="field">
+        <span class="field-label">日期</span>
+        <input type="date" id="fQuickDate">
+      </label>
+      <label class="field">
+        <span class="field-label">关联计划（可选）</span>
+        <select id="fQuickPlan"><option value="">不关联计划 · 即时支出</option></select>
+      </label>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-cancel" id="quickEntryCancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">保存支出</button>
+      </div>
+    </form>
   </div>
 
   <div class="drawer-mask" id="bookMask" hidden></div>
@@ -158,6 +202,30 @@
       <div class="drawer-actions drawer-actions-stack">
         <button type="button" class="btn btn-primary" id="createBookBtn">创建新账本</button>
         <button type="submit" class="btn btn-cancel">加入已有账本</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="drawer-mask" id="memberMask" hidden></div>
+  <div class="drawer drawer-sm" id="memberDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title">家庭成员</h3>
+    <p class="drawer-desc">每台设备设置一次，之后记账会自动标记是谁记录的。</p>
+    <form id="memberForm" class="drawer-form">
+      <label class="field">
+        <span class="field-label">我的名称</span>
+        <input type="text" id="fMemberName" maxlength="12" placeholder="例如：Mason / 妈妈" required>
+      </label>
+      <div class="member-color-list" id="memberColorList">
+        <button type="button" class="member-color active" data-color="#6366f1" style="--member-color:#6366f1" aria-label="靛蓝"></button>
+        <button type="button" class="member-color" data-color="#0ea5e9" style="--member-color:#0ea5e9" aria-label="蓝色"></button>
+        <button type="button" class="member-color" data-color="#10b981" style="--member-color:#10b981" aria-label="绿色"></button>
+        <button type="button" class="member-color" data-color="#f59e0b" style="--member-color:#f59e0b" aria-label="橙色"></button>
+        <button type="button" class="member-color" data-color="#ec4899" style="--member-color:#ec4899" aria-label="粉色"></button>
+      </div>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-cancel" id="memberCancelBtn">取消</button>
+        <button type="submit" class="btn btn-primary">保存成员</button>
       </div>
     </form>
   </div>
@@ -282,6 +350,10 @@
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>
+  <div class="undo-toast" id="quickUndoToast" hidden>
+    <span>支出已记录</span>
+    <button type="button" id="quickUndoBtn">撤销</button>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>
   <script src="scripts/pages/bookkeeping-config.js"></script>

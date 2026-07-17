@@ -7,6 +7,7 @@
   'use strict';
 
   var BOOK_ID_KEY = 'bookkeeping_book_id';
+  var MEMBER_PROFILE_KEY = 'bookkeeping_member_profile';
   var POLL_FALLBACK_MS = 60000;
   var SYNC_LABELS = {
     '': '',
@@ -143,7 +144,100 @@
     return { income: [], savings: [], expenses: [] };
   }
   function emptyData() {
-    return { budgetByMonth: {}, months: {} };
+    return {
+      members: {},
+      budgetByMonth: {},
+      budgetUpdatedAt: {},
+      deletedRecords: {},
+      months: {}
+    };
+  }
+  function normalizeData(data) {
+    data = data && typeof data === 'object' ? data : emptyData();
+    if (!data.members) data.members = {};
+    if (!data.budgetByMonth) data.budgetByMonth = {};
+    if (!data.budgetUpdatedAt) data.budgetUpdatedAt = {};
+    if (!data.deletedRecords) data.deletedRecords = {};
+    if (!data.months) data.months = {};
+    return data;
+  }
+  function recordTime(item) {
+    return (item && (item.updatedAt || item.recordedAt || item.completedAt || item.date)) || '';
+  }
+  function mergeList(remote, local, deleted, isExpense) {
+    var map = {};
+    var order = [];
+    function add(item, preferLocal) {
+      if (!item || !item.id) return;
+      if (!map[item.id]) order.push(item.id);
+      var existing = map[item.id];
+      if (!existing || recordTime(item) > recordTime(existing) ||
+          (preferLocal && recordTime(item) === recordTime(existing))) {
+        map[item.id] = JSON.parse(JSON.stringify(item));
+      }
+      if (isExpense && existing) {
+        map[item.id].payments = mergeList(
+          existing.payments || [],
+          item.payments || [],
+          deleted,
+          false
+        );
+      }
+    }
+    (remote || []).forEach(function (item) { add(item, false); });
+    (local || []).forEach(function (item) { add(item, true); });
+    return order.map(function (id) { return map[id]; }).filter(function (item) {
+      var deletedAt = deleted[item.id] || '';
+      return !deletedAt || deletedAt < recordTime(item);
+    });
+  }
+  function mergeLedgerData(remoteData, localData) {
+    var remote = normalizeData(JSON.parse(JSON.stringify(remoteData || emptyData())));
+    var local = normalizeData(JSON.parse(JSON.stringify(localData || emptyData())));
+    var out = emptyData();
+    Object.keys(remote.members).forEach(function (id) { out.members[id] = remote.members[id]; });
+    Object.keys(local.members).forEach(function (id) { out.members[id] = local.members[id]; });
+    Object.keys(remote.deletedRecords).forEach(function (id) { out.deletedRecords[id] = remote.deletedRecords[id]; });
+    Object.keys(local.deletedRecords).forEach(function (id) {
+      if (!out.deletedRecords[id] || local.deletedRecords[id] > out.deletedRecords[id]) {
+        out.deletedRecords[id] = local.deletedRecords[id];
+      }
+    });
+    var budgetKeys = {};
+    Object.keys(remote.budgetByMonth).forEach(function (key) { budgetKeys[key] = true; });
+    Object.keys(local.budgetByMonth).forEach(function (key) { budgetKeys[key] = true; });
+    Object.keys(budgetKeys).forEach(function (key) {
+      var rt = remote.budgetUpdatedAt[key] || '';
+      var lt = local.budgetUpdatedAt[key] || '';
+      var hasRemote = Object.prototype.hasOwnProperty.call(remote.budgetByMonth, key);
+      var hasLocal = Object.prototype.hasOwnProperty.call(local.budgetByMonth, key);
+      var source = !hasLocal ? remote : (!hasRemote ? local : (lt >= rt ? local : remote));
+      out.budgetByMonth[key] = source.budgetByMonth[key];
+      out.budgetUpdatedAt[key] = lt >= rt ? lt : rt;
+    });
+    var monthKeys = {};
+    Object.keys(remote.months).forEach(function (key) { monthKeys[key] = true; });
+    Object.keys(local.months).forEach(function (key) { monthKeys[key] = true; });
+    Object.keys(monthKeys).forEach(function (key) {
+      var rm = remote.months[key] || emptyMonth();
+      var lm = local.months[key] || emptyMonth();
+      out.months[key] = {
+        income: mergeList(rm.income, lm.income, out.deletedRecords, false),
+        savings: mergeList(rm.savings, lm.savings, out.deletedRecords, false),
+        expenses: mergeList(rm.expenses, lm.expenses, out.deletedRecords, true)
+      };
+    });
+    return normalizeData(out);
+  }
+  function touchRecord(item) {
+    if (item) item.updatedAt = nowISO();
+  }
+  function markDeleted(id) {
+    if (!id) return;
+    normalizeData(state.data).deletedRecords[id] = nowISO();
+  }
+  function touchBudget(key) {
+    normalizeData(state.data).budgetUpdatedAt[key] = nowISO();
   }
   function migrateLegacyData(bookId) {
     var newKey = dataStorageKey(bookId);
@@ -159,10 +253,7 @@
     try {
       var raw = localStorage.getItem(dataStorageKey(bookId));
       if (!raw) return emptyData();
-      var data = JSON.parse(raw);
-      if (!data.budgetByMonth) data.budgetByMonth = {};
-      if (!data.months) data.months = {};
-      return data;
+      return normalizeData(JSON.parse(raw));
     } catch (e) {
       return emptyData();
     }
@@ -250,13 +341,17 @@
     if (!row || !row.data) return false;
     var localAt = localStorage.getItem(syncStorageKey(state.bookId)) || '';
     if (force || !localAt || row.updated_at > localAt) {
-      state.data = row.data;
-      if (!state.data.budgetByMonth) state.data.budgetByMonth = {};
-      if (!state.data.months) state.data.months = {};
+      var before = JSON.stringify(state.data);
+      var remoteChanged = JSON.stringify(normalizeData(row.data)) !== before;
+      state.data = mergeLedgerData(row.data, state.data);
       saveLocal();
       localStorage.setItem(syncStorageKey(state.bookId), row.updated_at);
       hideSyncError();
-      return true;
+      if (state.localDirty && remoteChanged && Date.now() - state.lastConflictNotice > 8000) {
+        state.lastConflictNotice = Date.now();
+        showToast('检测到家人同时更新，已自动合并双方记录', 3200);
+      }
+      return before !== JSON.stringify(state.data);
     }
     return false;
   }
@@ -375,7 +470,7 @@
     if (!cloudEnabled() || !state.bookId) return;
     hideSyncError();
     setSyncStatus('syncing');
-    cloudPush(state.bookId, state.data)
+    syncMergedData()
       .then(function () {
         setSyncStatus(state.realtimeReady ? 'live' : 'ok');
         showToast('同步成功');
@@ -393,12 +488,33 @@
       });
   }
 
+  function syncMergedData() {
+    if (!cloudEnabled() || !state.bookId) return Promise.resolve(false);
+    var revision = state.saveRevision;
+    return cloudFetch(state.bookId).then(function (row) {
+      if (row && row.data) state.data = mergeLedgerData(row.data, state.data);
+      saveLocal();
+      return cloudPush(state.bookId, state.data).then(function () {
+        if (revision === state.saveRevision) state.localDirty = false;
+        hideSyncError();
+        return true;
+      });
+    });
+  }
+
   function save() {
     saveLocal();
+    state.localDirty = true;
+    state.saveRevision += 1;
     if (cloudEnabled() && state.bookId) {
       setSyncStatus('syncing');
-      cloudPush(state.bookId, state.data)
-        .then(function () { setSyncStatus(state.realtimeReady ? 'live' : 'ok'); })
+      state.savePromise = (state.savePromise || Promise.resolve())
+        .catch(function () {})
+        .then(syncMergedData)
+        .then(function () {
+          render();
+          setSyncStatus(state.realtimeReady ? 'live' : 'ok');
+        })
         .catch(function () {
           setSyncStatus('err');
           showSyncError('保存到云端失败，家人可能看不到最新数据。');
@@ -440,6 +556,83 @@
     var label = parts[0] + '年' + parseInt(parts[1], 10) + '月';
     return label + '家庭记账本，点开一起看：' + getShareLink();
   }
+  function getMemberProfile() {
+    if (state.memberProfile) return state.memberProfile;
+    try {
+      var raw = localStorage.getItem(MEMBER_PROFILE_KEY);
+      state.memberProfile = raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      state.memberProfile = null;
+    }
+    return state.memberProfile;
+  }
+  function currentMemberFields() {
+    var profile = getMemberProfile();
+    return profile ? { memberId: profile.memberId, memberName: profile.name } : {};
+  }
+  function registerMember(profile) {
+    if (!profile || !state.bookId) return;
+    normalizeData(state.data).members[profile.memberId] = {
+      name: profile.name,
+      color: profile.color,
+      createdAt: profile.createdAt || nowISO()
+    };
+  }
+  function openMemberDrawer(force) {
+    var profile = getMemberProfile();
+    $('fMemberName').value = profile ? profile.name : '';
+    state.memberColor = profile ? profile.color : '#6366f1';
+    var colors = document.querySelectorAll('.member-color');
+    for (var i = 0; i < colors.length; i++) {
+      colors[i].classList.toggle('active', colors[i].getAttribute('data-color') === state.memberColor);
+    }
+    $('memberDrawer').dataset.force = force ? '1' : '';
+    $('memberMask').hidden = false;
+    $('memberDrawer').hidden = false;
+    setTimeout(function () { $('fMemberName').focus(); }, 220);
+  }
+  function closeMemberDrawer() {
+    if ($('memberDrawer').dataset.force === '1' && !getMemberProfile()) return;
+    $('memberMask').hidden = true;
+    $('memberDrawer').hidden = true;
+  }
+  function submitMember(e) {
+    e.preventDefault();
+    var name = ($('fMemberName').value || '').trim();
+    if (!name) {
+      showToast('请输入成员名称');
+      $('fMemberName').focus();
+      return;
+    }
+    var old = getMemberProfile();
+    var profile = {
+      memberId: old && old.memberId ? old.memberId : ('member_' + uid()),
+      name: name,
+      color: state.memberColor || '#6366f1',
+      createdAt: old && old.createdAt ? old.createdAt : nowISO()
+    };
+    state.memberProfile = profile;
+    localStorage.setItem(MEMBER_PROFILE_KEY, JSON.stringify(profile));
+    registerMember(profile);
+    save();
+    updateBookBar();
+    $('memberDrawer').dataset.force = '';
+    closeMemberDrawer();
+    showToast('成员身份已保存');
+    var next = state.memberNext;
+    state.memberNext = null;
+    if (typeof next === 'function') next();
+  }
+  function ensureMember(next) {
+    var profile = getMemberProfile();
+    if (profile) {
+      registerMember(profile);
+      return true;
+    }
+    state.memberNext = next || null;
+    openMemberDrawer(true);
+    return false;
+  }
   function updateBookBar() {
     var bar = $('bookBar');
     if (!cloudEnabled()) {
@@ -448,6 +641,8 @@
     }
     bar.hidden = false;
     $('bookIdDisplay').textContent = state.bookId || '未加入';
+    var profile = getMemberProfile();
+    if ($('memberBookBtn')) $('memberBookBtn').textContent = profile ? profile.name : '设置成员';
   }
 
   function setBookId(id) {
@@ -578,7 +773,17 @@
     syncFailed: false,
     realtimeReady: false,
     payingExpenseId: null,
-    activeTab: 'home'
+    activeTab: 'home',
+    memberProfile: null,
+    memberColor: '#6366f1',
+    memberNext: null,
+    savePromise: Promise.resolve(),
+    quickUndo: null,
+    quickUndoTimer: null,
+    aiBudgetUndo: null,
+    localDirty: false,
+    saveRevision: 0,
+    lastConflictNotice: 0
   };
 
   /* ---------- 计算 ---------- */
@@ -614,7 +819,15 @@
       var amt = item.actualAmount;
       if (amt === '' || amt == null) amt = item.plannedAmount;
       amt = num(amt);
-      if (amt > 0) arr.push({ id: uid(), amount: amt, date: item.date || todayISO() });
+      if (amt > 0) {
+        arr.push({
+          id: 'legacy_' + item.id,
+          amount: amt,
+          date: item.date || todayISO(),
+          recordedAt: item.completedAt || '',
+          updatedAt: item.updatedAt || item.completedAt || ''
+        });
+      }
     }
     item.payments = arr;
     return arr;
@@ -679,6 +892,7 @@
   function syncBudgetFromIncome(key) {
     var m = getMonth(key);
     state.data.budgetByMonth[key] = sum(m.income, 'amount');
+    touchBudget(key);
   }
 
   /* ---------- Tab 与数据看板 ---------- */
@@ -704,15 +918,89 @@
   function monthDataReadonly(key) {
     return state.data.months[key] || { income: [], savings: [], expenses: [] };
   }
+  function cycleMetrics(current, spent, budget) {
+    var start = new Date(current.getFullYear(), current.getMonth(), CYCLE_START_DAY);
+    var end = new Date(current.getFullYear(), current.getMonth() + 1, CYCLE_START_DAY);
+    var today = new Date();
+    var dayMs = 24 * 60 * 60 * 1000;
+    var totalDays = Math.round((end - start) / dayMs);
+    var elapsedDays = today <= start ? 0 : (today >= end ? totalDays : Math.max(1, Math.ceil((today - start) / dayMs)));
+    var remainingDays = today >= end ? 0 : (today <= start ? totalDays : Math.max(0, Math.ceil((end - today) / dayMs)));
+    var remainingBudget = budget - spent;
+    var dailyAvailable = remainingDays > 0 ? Math.max(0, remainingBudget / remainingDays) : 0;
+    var forecast = elapsedDays > 0 ? spent / elapsedDays * totalDays : spent;
+    var risk = { level: 'safe', label: '节奏健康', note: '当前支出速度在预算内' };
+    if (budget <= 0) {
+      risk = { level: 'neutral', label: '未设预算', note: '设置预算后可判断超支风险' };
+    } else if (remainingBudget < 0 || forecast > budget * 1.08) {
+      risk = { level: 'high', label: '超支风险高', note: '按当前速度预计超过预算' };
+    } else if (forecast > budget * 0.92) {
+      risk = { level: 'watch', label: '需要关注', note: '预计接近本周期预算上限' };
+    }
+    return {
+      totalDays: totalDays,
+      elapsedDays: elapsedDays,
+      remainingDays: remainingDays,
+      remainingBudget: remainingBudget,
+      dailyAvailable: dailyAvailable,
+      forecast: forecast,
+      risk: risk
+    };
+  }
+  function recentFamilyPayments(expenses) {
+    var rows = [];
+    (expenses || []).forEach(function (expense) {
+      (expense.payments || []).forEach(function (payment) {
+        if (num(payment.amount) <= 0) return;
+        rows.push({
+          expenseId: expense.id,
+          amount: num(payment.amount),
+          note: (payment.note || expense.name || '未备注').trim(),
+          memberName: payment.memberName || '未标注',
+          timeText: formatPaymentTime(payment),
+          sortAt: payment.recordedAt || payment.date || ''
+        });
+      });
+    });
+    return rows.sort(function (a, b) { return a.sortAt < b.sortAt ? 1 : -1; }).slice(0, 5);
+  }
+  function aiTrendContext(current) {
+    var trends = [];
+    var nameCounts = {};
+    for (var offset = 1; offset <= 3; offset++) {
+      var d = new Date(current.getFullYear(), current.getMonth() - offset, 1);
+      var key = monthKey(d);
+      var expenses = monthDataReadonly(key).expenses || [];
+      var total = 0;
+      var categories = {};
+      expenses.forEach(function (expense) {
+        var paid = expensePaid(expense);
+        total += paid;
+        if (paid > 0) {
+          categories[expense.name || '未命名'] = (categories[expense.name || '未命名'] || 0) + paid;
+          nameCounts[expense.name || '未命名'] = (nameCounts[expense.name || '未命名'] || 0) + 1;
+        }
+      });
+      trends.push({ monthKey: key, spent: total, categories: categories });
+    }
+    return {
+      trends: trends,
+      recurring: Object.keys(nameCounts).filter(function (name) { return nameCounts[name] >= 2; }).slice(0, 8)
+    };
+  }
 
   /* ---------- AI 开支建议 ---------- */
   var AI_PREFIX = 'bookkeeping_ai_advice';
-  var aiState = { key: '', state: 'idle', advice: '', error: '', time: '', cached: false, stale: false };
+  var aiState = { key: '', state: 'idle', advice: '', result: null, error: '', time: '', cached: false, stale: false };
 
   function aiStorageKey(bookId, key) { return AI_PREFIX + '_' + (bookId || '_none') + '_' + key; }
   function aiFingerprint(ov) {
     if (!ov) return '0';
-    var parts = [ov.income, ov.saving, ov.spent, ov.planned, ov.budget];
+    var parts = [
+      ov.income, ov.saving, ov.spent, ov.planned, ov.budget,
+      ov.remainingDays, ov.forecast, JSON.stringify(ov.trends || []),
+      JSON.stringify(ov.recurring || [])
+    ];
     var ranked = ov.ranked || [];
     for (var i = 0; i < ranked.length; i++) {
       parts.push(ranked[i].name + ':' + ranked[i].paid);
@@ -754,6 +1042,8 @@
     lines.push('计划开支：' + fmt(ov.planned));
     if (ov.budget) lines.push('预算总额：' + fmt(ov.budget));
     lines.push('本期结余：' + fmt(ov.balance));
+    lines.push('剩余天数：' + (ov.remainingDays || 0));
+    lines.push('预计周期末开支：' + fmt(ov.forecast || 0));
     lines.push('');
     lines.push('开支明细（按金额从高到低）：');
     var ranked = ov.ranked || [];
@@ -766,13 +1056,37 @@
         var segs = (it.segments || []).filter(function (s) { return num(s.amount) > 0; });
         if (segs.length) {
           line += '（明细：' + segs.map(function (s) {
-            return ((s.label || '').trim() || '未备注') + ' ' + fmt(s.amount);
+            return ((s.label || '').trim() || '未备注') + ' ' + fmt(s.amount) +
+              (s.memberName ? '（' + s.memberName + '）' : '');
           }).join('、') + '）';
         }
         lines.push(line);
       }
     }
+    if (ov.trends && ov.trends.length) lines.push('最近周期趋势：' + JSON.stringify(ov.trends));
+    if (ov.recurring && ov.recurring.length) lines.push('重复支出候选：' + ov.recurring.join('、'));
     return lines.join('\n');
+  }
+  function aiPayloadOverview(ov) {
+    return {
+      income: ov.income, saving: ov.saving, spent: ov.spent, planned: ov.planned,
+      budget: ov.budget, balance: ov.balance, remainingDays: ov.remainingDays,
+      forecast: ov.forecast, nextMonthKey: ov.nextMonthKey,
+      trends: ov.trends || [], recurring: ov.recurring || [],
+      ranked: (ov.ranked || []).slice(0, 20).map(function (item) {
+        return {
+          name: item.name,
+          paid: item.paid,
+          segments: (item.segments || []).slice(0, 30).map(function (segment) {
+            return {
+              label: segment.label,
+              amount: segment.amount,
+              memberName: segment.memberName || '未标注'
+            };
+          })
+        };
+      })
+    };
   }
   function fetchAiSummaryH5(key, ov) {
     var c = getConfig();
@@ -791,7 +1105,7 @@
     } else {
       url = c.aiSummaryUrl || (c.supabaseUrl + '/functions/v1/ai-summary');
       headers = c.aiSummaryUrl ? { 'Content-Type': 'application/json' } : supabaseHeaders();
-      body = JSON.stringify({ monthKey: key, overview: ov });
+      body = JSON.stringify({ monthKey: key, overview: aiPayloadOverview(ov) });
     }
     return fetch(url, {
       method: 'POST', headers: headers, body: body,
@@ -842,7 +1156,7 @@
   function streamAiSummaryH5(key, ov, onDelta) {
     var c = getConfig();
     if (!c.zhipuApiKey || typeof ReadableStream === 'undefined') {
-      return fetchAiSummaryH5(key, ov).then(function (r) { return r.advice; });
+      return fetchAiSummaryH5(key, ov);
     }
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 45000) : null;
@@ -901,11 +1215,11 @@
     } else {
       var cache = aiGetCache(key);
       if (cache && cache.fingerprint === fp && cache.advice) {
-        s = { state: 'done', advice: cache.advice, time: cache.time || '', cached: true, stale: false, error: '' };
+        s = { state: 'done', advice: cache.advice, result: cache.result || null, time: cache.time || '', cached: true, stale: false, error: '' };
       } else {
-        s = { state: 'idle', advice: '', time: '', cached: false, error: '', stale: !!(cache && cache.advice) };
+        s = { state: 'idle', advice: '', result: null, time: '', cached: false, error: '', stale: !!(cache && cache.advice) };
       }
-      aiState = { key: key, state: s.state, advice: s.advice, error: s.error, time: s.time, cached: s.cached, stale: s.stale };
+      aiState = { key: key, state: s.state, advice: s.advice, result: s.result || null, error: s.error, time: s.time, cached: s.cached, stale: s.stale };
     }
     var inner;
     if (s.state === 'idle') {
@@ -918,8 +1232,9 @@
       inner = '<div class="ai-advice">' + aiMdToHtml(s.advice) + '<span class="ai-caret"></span></div>';
     } else if (s.state === 'done') {
       inner = '<div class="ai-advice">' + aiMdToHtml(s.advice) + '</div>' +
+        aiStructuredHtml(s.result) +
         '<div class="ai-foot"><span class="ai-time">' + (s.cached ? '上次生成 ' : '生成于 ') + escapeHtml(s.time) + '</span>' +
-        '<span class="ai-regen" id="aiRegen">重新生成</span></div>';
+        '<button type="button" class="ai-regen" id="aiRegen">重新生成</button></div>';
     } else {
       inner = '<div class="ai-error">' + escapeHtml(s.error) + '</div>' +
         '<button class="ai-btn" id="aiGenBtn">重试</button>';
@@ -927,6 +1242,28 @@
     return '<section class="dash-section ai-section">' +
       '<div class="dash-title">AI 开支建议 <span class="dash-sub">GLM-4-Flash</span></div>' +
       inner + '</section>';
+  }
+  function aiStructuredHtml(result) {
+    if (!result || typeof result !== 'object') return '';
+    var html = '';
+    var risks = Array.isArray(result.risks) ? result.risks.slice(0, 3) : [];
+    if (risks.length) {
+      html += '<div class="ai-risk-list">' + risks.map(function (risk) {
+        return '<div class="ai-risk"><i></i><div><b>' + escapeHtml(risk.title || '支出提醒') + '</b>' +
+          '<span>' + escapeHtml(risk.reason || '') + '</span></div>' +
+          (num(risk.amount) > 0 ? '<strong>' + fmt(num(risk.amount)) + '</strong>' : '') + '</div>';
+      }).join('') + '</div>';
+    }
+    var actions = Array.isArray(result.actions) ? result.actions.filter(function (action) {
+      return action && action.type === 'set_budget' && /^\d{4}-\d{2}$/.test(action.monthKey || '') && num(action.amount) > 0;
+    }).slice(0, 1) : [];
+    if (actions.length) {
+      var action = actions[0];
+      html += '<button type="button" class="ai-action-btn" data-month-key="' + escapeHtml(action.monthKey) +
+        '" data-amount="' + num(action.amount) + '">✓ ' +
+        escapeHtml(action.label || ('采用下周期预算 ' + fmt(num(action.amount)))) + '</button>';
+    }
+    return html;
   }
   function genAdviceH5(force, ov, key) {
     if (!ov) return;
@@ -939,7 +1276,7 @@
     if (!force) {
       var cache = aiGetCache(key);
       if (cache && cache.fingerprint === fp && cache.advice) {
-        aiState = { key: key, state: 'done', advice: cache.advice, error: '', time: cache.time || '', cached: true, stale: false };
+        aiState = { key: key, state: 'done', advice: cache.advice, result: cache.result || null, error: '', time: cache.time || '', cached: true, stale: false };
         renderDashboard();
         return;
       }
@@ -949,12 +1286,13 @@
     streamAiSummaryH5(key, ov, function (partial) {
       aiState = { key: key, state: 'streaming', advice: partial, error: '', time: '', cached: false, stale: false };
       renderAiStreaming(partial);
-    }).then(function (advice) {
-      advice = (typeof advice === 'string' ? advice : (advice && advice.advice) || '').trim();
+    }).then(function (response) {
+      var result = typeof response === 'string' ? null : response;
+      var advice = (typeof response === 'string' ? response : (response && response.advice) || '').trim();
       if (!advice) throw new Error('AI 未返回内容');
       var time = aiTimeText(new Date().toISOString());
-      aiSetCache(key, { advice: advice, fingerprint: fp, time: time });
-      aiState = { key: key, state: 'done', advice: advice, error: '', time: time, cached: false, stale: false };
+      aiSetCache(key, { advice: advice, result: result, fingerprint: fp, time: time });
+      aiState = { key: key, state: 'done', advice: advice, result: result, error: '', time: time, cached: false, stale: false };
       renderDashboard();
     }).catch(function (err) {
       var msg = (err && err.message) || '生成失败，请重试';
@@ -963,6 +1301,33 @@
       aiState = { key: key, state: 'error', advice: '', error: msg, time: '', cached: false, stale: false };
       renderDashboard();
     });
+  }
+  function applyAiBudget(monthKeyValue, amount) {
+    amount = num(amount);
+    if (!/^\d{4}-\d{2}$/.test(monthKeyValue || '') || amount <= 0) return;
+    if (!confirm('将 ' + monthKeyValue + ' 的预算设置为 ' + fmt(amount) + '？')) return;
+    state.aiBudgetUndo = {
+      monthKey: monthKeyValue,
+      hadValue: Object.prototype.hasOwnProperty.call(state.data.budgetByMonth, monthKeyValue),
+      value: state.data.budgetByMonth[monthKeyValue]
+    };
+    state.quickUndo = null;
+    state.data.budgetByMonth[monthKeyValue] = amount;
+    touchBudget(monthKeyValue);
+    save();
+    render();
+    showQuickUndo('AI 建议预算已采用');
+  }
+  function undoAiBudget() {
+    var undo = state.aiBudgetUndo;
+    if (!undo) return;
+    if (undo.hadValue) state.data.budgetByMonth[undo.monthKey] = undo.value;
+    else state.data.budgetByMonth[undo.monthKey] = null;
+    touchBudget(undo.monthKey);
+    state.aiBudgetUndo = null;
+    save();
+    render();
+    showToast('已撤销预算修改');
   }
 
   function renderDashboard() {
@@ -980,23 +1345,34 @@
     var balance = income - actualSpent;
     var execPct = budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0;
     var execOver = budget > 0 && actualSpent > budget;
+    var forecast = cycleMetrics(state.current, actualSpent, budget);
 
     var html = '';
-    html += '<section class="dash-section">' +
-      '<div class="dash-title">本月复盘 <span class="dash-sub">' + escapeHtml(cycleRangeText(state.current)) + '</span></div>' +
-      '<div class="dash-stats">' +
-        statCard('收入', income, 'income') +
-        statCard('储蓄', saving, 'saving') +
-        statCard('已花开支', spent, 'expense') +
-        statCard('结余', balance, balance < 0 ? 'neg' : '') +
+    html += '<section class="finance-cockpit">' +
+      '<div class="cockpit-top"><div><div class="cockpit-kicker">本周期可用余额</div>' +
+        '<div class="cockpit-balance' + (forecast.remainingBudget < 0 ? ' neg' : '') + '">' + fmt(forecast.remainingBudget) + '</div>' +
+        '<div class="cockpit-cycle">' + escapeHtml(cycleRangeText(state.current)) + ' · 剩余 ' + forecast.remainingDays + ' 天</div></div>' +
+        '<div class="budget-ring" style="--ring-pct:' + execPct + ';--ring-color:' + (execOver ? '#fca5a5' : '#93c5fd') + '">' +
+          '<div><b>' + execPct + '%</b><span>预算已用</span></div></div></div>' +
+      '<div class="cockpit-grid">' +
+        '<div><span>今日建议可花</span><b>' + fmt(forecast.dailyAvailable) + '</b></div>' +
+        '<div><span>预计周期末开支</span><b>' + fmt(forecast.forecast) + '</b><small>趋势预测</small></div>' +
       '</div>' +
-      '<div class="dash-progress">' +
-        '<div class="dash-progress-head"><span>预算执行</span><span>' +
-          fmt(actualSpent) + ' / ' + (budget > 0 ? fmt(budget) : '未设预算') + '</span></div>' +
-        '<div class="dash-track"><div class="dash-fill' + (execOver ? ' over' : '') +
-          '" style="width:' + execPct + '%"></div></div>' +
-      '</div>' +
+      '<div class="risk-banner ' + forecast.risk.level + '"><i></i><div><b>' + forecast.risk.label + '</b><span>' + forecast.risk.note + '</span></div></div>' +
+      '<div class="cockpit-mini"><span>收入 <b class="income">' + fmt(income) + '</b></span><span>储蓄 <b class="saving">' + fmt(saving) +
+        '</b></span><span>已花 <b class="expense">' + fmt(spent) + '</b></span></div>' +
     '</section>';
+
+    var recent = recentFamilyPayments(m.expenses);
+    var recentHtml = recent.length ? recent.map(function (row) {
+      return '<button type="button" class="activity-row" data-expense-id="' + escapeHtml(row.expenseId) + '">' +
+        '<span class="activity-avatar">' + escapeHtml(row.memberName.charAt(0)) + '</span>' +
+        '<span class="activity-main"><b>' + escapeHtml(row.note) + '</b><small>' +
+          escapeHtml(row.memberName) + ' · ' + escapeHtml(row.timeText || '—') + '</small></span>' +
+        '<strong>-' + fmt(row.amount) + '</strong><span class="rank-chevron">›</span></button>';
+    }).join('') : '<div class="dash-empty">本周期还没有家庭支出</div>';
+    html += '<section class="dash-section family-activity">' +
+      '<div class="dash-title">最近家庭动态 <span class="dash-sub">最近 5 笔</span></div>' + recentHtml + '</section>';
 
     var ranked = [];
     for (var i = 0; i < m.expenses.length; i++) {
@@ -1012,7 +1388,8 @@
             segs.push({
               label: (pay.note || '').trim(),
               amount: amt,
-              timeText: formatPaymentTime(pay)
+              timeText: formatPaymentTime(pay),
+              memberName: pay.memberName || '未标注'
             });
           }
         }
@@ -1054,7 +1431,15 @@
       '<div class="dash-title">本月开支占比</div>' + rankHtml + '</section>';
 
     var planned = sum(m.expenses, 'plannedAmount');
-    var ov = { income: income, saving: saving, spent: spent, planned: planned, budget: budget, balance: balance, ranked: ranked };
+    var aiContext = aiTrendContext(state.current);
+    var nextCycle = monthKey(new Date(state.current.getFullYear(), state.current.getMonth() + 1, 1));
+    var ov = {
+      income: income, saving: saving, spent: spent, planned: planned,
+      budget: budget, balance: balance, ranked: ranked,
+      remainingDays: forecast.remainingDays, forecast: forecast.forecast,
+      trends: aiContext.trends, recurring: aiContext.recurring,
+      nextMonthKey: nextCycle
+    };
     html += aiCardHtml(ov, key);
 
     var months = [];
@@ -1129,6 +1514,18 @@
         openExpenseDetailDrawer(this.getAttribute('data-expense-id'));
       });
     }
+    var activityRows = view.querySelectorAll('.activity-row[data-expense-id]');
+    for (var ai = 0; ai < activityRows.length; ai++) {
+      activityRows[ai].addEventListener('click', function () {
+        openExpenseDetailDrawer(this.getAttribute('data-expense-id'));
+      });
+    }
+    var actionBtn = view.querySelector('.ai-action-btn');
+    if (actionBtn) {
+      actionBtn.addEventListener('click', function () {
+        applyAiBudget(this.getAttribute('data-month-key'), this.getAttribute('data-amount'));
+      });
+    }
   }
 
   function statCard(label, value, cls) {
@@ -1155,7 +1552,7 @@
     $('budgetOutValue').textContent = fmt(budgetOut);
     $('actualSpentValue').textContent = fmt(actualSpent);
     $('remainValue').textContent = fmt(remain);
-    $('remainValue').style.color = remain < 0 ? '#fecaca' : '#fff';
+    $('remainValue').style.color = remain < 0 ? 'var(--danger)' : 'var(--text)';
 
     var pct = budget > 0 ? Math.min(100, (budgetOut / budget) * 100) : 0;
     var fill = $('progressFill');
@@ -1281,7 +1678,8 @@
     var planned = num(item.plannedAmount);
     if (expenseStatus(item) === 'done') {
       while (item.payments.length && expensePaid(item) >= planned) {
-        item.payments.pop();
+        var removed = item.payments.pop();
+        markDeleted(removed && removed.id);
       }
       item.done = false;
       delete item.completedAt;
@@ -1291,6 +1689,7 @@
       } else {
         item.actualAmount = expensePaid(item);
       }
+      touchRecord(item);
       save();
       render();
       showToast('已取消完成');
@@ -1299,10 +1698,20 @@
     var paid = expensePaid(item);
     var remainder = Math.max(0, planned - paid);
     if (remainder > 0) {
-      item.payments.push({ id: uid(), amount: remainder, date: todayISO(), recordedAt: nowISO() });
+      if (!getMemberProfile()) {
+        ensureMember(function () { toggleDone(id); });
+        return;
+      }
+      var member = currentMemberFields();
+      item.payments.push({
+        id: uid(), amount: remainder, date: todayISO(), note: '完成计划',
+        recordedAt: nowISO(), updatedAt: nowISO(),
+        memberId: member.memberId, memberName: member.memberName
+      });
     }
     refreshExpenseDone(item);
     item.actualAmount = expensePaid(item);
+    touchRecord(item);
     save();
     render();
   }
@@ -1379,6 +1788,10 @@
   }
 
   function openPaymentDrawer(id) {
+    if (!getMemberProfile()) {
+      ensureMember(function () { openPaymentDrawer(id); });
+      return;
+    }
     var item = findItem('expenses', id);
     if (!item || expenseStatus(item) === 'done') return;
     state.payingExpenseId = id;
@@ -1399,6 +1812,211 @@
     state.payingExpenseId = null;
     $('paymentMask').hidden = true;
     $('paymentDrawer').hidden = true;
+  }
+
+  function quickSuggestions() {
+    var map = {};
+    Object.keys(state.data.months || {}).forEach(function (key) {
+      var expenses = (state.data.months[key] && state.data.months[key].expenses) || [];
+      expenses.forEach(function (expense) {
+        var names = [expense.name];
+        (expense.payments || []).forEach(function (payment) { names.push(payment.note); });
+        names.forEach(function (name) {
+          name = (name || '').trim();
+          if (!name) return;
+          if (!map[name]) map[name] = { name: name, count: 0, lastAt: '', planId: '' };
+          map[name].count += 1;
+          var at = recordTime(expense);
+          if (at >= map[name].lastAt) map[name].lastAt = at;
+        });
+      });
+    });
+    var currentExpenses = getMonth(monthKey(state.current)).expenses;
+    Object.keys(map).forEach(function (name) {
+      for (var i = 0; i < currentExpenses.length; i++) {
+        if (currentExpenses[i].name === name) map[name].planId = currentExpenses[i].id;
+      }
+    });
+    return Object.keys(map).map(function (name) { return map[name]; })
+      .sort(function (a, b) { return b.count - a.count || (b.lastAt > a.lastAt ? 1 : -1); })
+      .slice(0, 6);
+  }
+  function renderQuickEntryOptions() {
+    var profile = getMemberProfile();
+    var members = normalizeData(state.data).members;
+    var memberIds = Object.keys(members);
+    if (profile && memberIds.indexOf(profile.memberId) === -1) {
+      registerMember(profile);
+      memberIds = Object.keys(members);
+    }
+    memberIds.sort(function (a, b) {
+      if (profile && a === profile.memberId) return -1;
+      if (profile && b === profile.memberId) return 1;
+      return 0;
+    });
+    $('fQuickMember').innerHTML = memberIds.map(function (id) {
+      return '<option value="' + escapeHtml(id) + '">' + escapeHtml(members[id].name || '未命名') + '</option>';
+    }).join('');
+    if (profile) $('fQuickMember').value = profile.memberId;
+    $('quickMemberPill').textContent = profile ? profile.name + ' 的设备' : '';
+
+    var key = monthKey(state.current);
+    var plans = getMonth(key).expenses.filter(function (item) { return item.source !== 'quick'; });
+    $('fQuickPlan').innerHTML = '<option value="">不关联计划 · 即时支出</option>' +
+      plans.map(function (item) {
+        var remain = Math.max(0, num(item.plannedAmount) - expensePaid(item));
+        return '<option value="' + escapeHtml(item.id) + '">' +
+          escapeHtml(item.name) + ' · 剩余 ' + escapeHtml(fmt(remain)) + '</option>';
+      }).join('');
+
+    var chips = quickSuggestions();
+    $('quickChips').innerHTML = chips.length
+      ? '<span class="quick-chips-label">常用</span>' + chips.map(function (item) {
+          return '<button type="button" class="quick-chip" data-note="' + escapeHtml(item.name) +
+            '" data-plan-id="' + escapeHtml(item.planId) + '">' + escapeHtml(item.name) + '</button>';
+        }).join('')
+      : '';
+  }
+  function openQuickEntry() {
+    if (!getMemberProfile()) {
+      ensureMember(openQuickEntry);
+      return;
+    }
+    renderQuickEntryOptions();
+    $('fQuickAmount').value = '';
+    $('fQuickNote').value = '';
+    $('fQuickDate').value = todayISO();
+    $('fQuickPlan').value = '';
+    showDrawer('quickEntryDrawer', 'quickEntryMask');
+    setTimeout(function () { $('fQuickAmount').focus(); }, 220);
+  }
+  function closeQuickEntry() {
+    $('quickEntryMask').hidden = true;
+    $('quickEntryDrawer').hidden = true;
+  }
+  function submitQuickEntry(e) {
+    e.preventDefault();
+    var amount = num($('fQuickAmount').value);
+    var note = ($('fQuickNote').value || '').trim();
+    if (amount <= 0) {
+      showToast('请输入支出金额');
+      $('fQuickAmount').focus();
+      return;
+    }
+    if (!note) {
+      showToast('请输入支出备注');
+      $('fQuickNote').focus();
+      return;
+    }
+    var key = monthKey(state.current);
+    var month = getMonth(key);
+    var memberId = $('fQuickMember').value;
+    var member = state.data.members[memberId] || {};
+    var payment = {
+      id: uid(),
+      amount: amount,
+      note: note,
+      date: $('fQuickDate').value || todayISO(),
+      recordedAt: nowISO(),
+      updatedAt: nowISO(),
+      memberId: memberId,
+      memberName: member.name || '未标注'
+    };
+    var planId = $('fQuickPlan').value;
+    var expense = null;
+    var createdExpense = false;
+    if (planId) {
+      for (var i = 0; i < month.expenses.length; i++) {
+        if (month.expenses[i].id === planId) expense = month.expenses[i];
+      }
+    }
+    if (expense) {
+      ensurePayments(expense);
+      expense.payments.push(payment);
+      refreshExpenseDone(expense);
+      expense.actualAmount = expensePaid(expense);
+      touchRecord(expense);
+    } else {
+      expense = {
+        id: uid(),
+        name: note,
+        plannedAmount: amount,
+        date: payment.date,
+        source: 'quick',
+        payments: [payment],
+        done: true,
+        completedAt: nowISO(),
+        actualAmount: amount,
+        updatedAt: nowISO()
+      };
+      month.expenses.push(expense);
+      createdExpense = true;
+    }
+    state.quickUndo = {
+      monthKey: key,
+      expenseId: expense.id,
+      paymentId: payment.id,
+      createdExpense: createdExpense
+    };
+    state.aiBudgetUndo = null;
+    save();
+    render();
+    closeQuickEntry();
+    showQuickUndo();
+  }
+  function showQuickUndo(message) {
+    var toast = $('quickUndoToast');
+    var label = toast.querySelector('span');
+    if (label) label.textContent = message || '支出已记录';
+    toast.hidden = false;
+    toast.classList.add('show');
+    if (state.quickUndoTimer) clearTimeout(state.quickUndoTimer);
+    state.quickUndoTimer = setTimeout(function () {
+      toast.classList.remove('show');
+      setTimeout(function () { toast.hidden = true; }, 220);
+      state.quickUndo = null;
+      state.aiBudgetUndo = null;
+    }, 8000);
+  }
+  function undoQuickEntry() {
+    var undo = state.quickUndo;
+    if (!undo) return;
+    var month = state.data.months[undo.monthKey];
+    if (!month) return;
+    for (var i = 0; i < month.expenses.length; i++) {
+      var expense = month.expenses[i];
+      if (expense.id !== undo.expenseId) continue;
+      if (undo.createdExpense) {
+        month.expenses.splice(i, 1);
+        markDeleted(expense.id);
+        markDeleted(undo.paymentId);
+      } else {
+        expense.payments = (expense.payments || []).filter(function (payment) {
+          return payment.id !== undo.paymentId;
+        });
+        markDeleted(undo.paymentId);
+        refreshExpenseDone(expense);
+        expense.actualAmount = expensePaid(expense);
+        touchRecord(expense);
+      }
+      break;
+    }
+    state.quickUndo = null;
+    if (state.quickUndoTimer) clearTimeout(state.quickUndoTimer);
+    $('quickUndoToast').classList.remove('show');
+    $('quickUndoToast').hidden = true;
+    save();
+    render();
+    showToast('已撤销这笔支出');
+  }
+  function undoLastAction() {
+    if (state.aiBudgetUndo) {
+      undoAiBudget();
+      $('quickUndoToast').classList.remove('show');
+      $('quickUndoToast').hidden = true;
+      return;
+    }
+    undoQuickEntry();
   }
 
   function openExpenseDetailDrawer(expenseId) {
@@ -1466,6 +2084,8 @@
         note = (note || '').trim();
         if (note) item.payments[i].note = note;
         else delete item.payments[i].note;
+        touchRecord(item.payments[i]);
+        touchRecord(item);
         return true;
       }
     }
@@ -1516,10 +2136,15 @@
       id: uid(),
       amount: amt,
       date: $('fPayDate').value || todayISO(),
-      recordedAt: nowISO()
+      recordedAt: nowISO(),
+      updatedAt: nowISO()
     };
+    var memberFields = currentMemberFields();
+    pay.memberId = memberFields.memberId;
+    pay.memberName = memberFields.memberName;
     pay.note = note;
     item.payments.push(pay);
+    touchRecord(item);
     refreshExpenseDone(item);
     item.actualAmount = expensePaid(item);
     save();
@@ -1570,16 +2195,26 @@
     if (ed.type === 'expenses') {
       var planned = num($('fPlanned').value);
       var paymentAmt = num($('fPayment').value);
+      if (paymentAmt > 0 && !getMemberProfile()) {
+        ensureMember(function () { $('entryForm').requestSubmit(); });
+        return;
+      }
       if (item) {
         item.name = name;
         item.date = date;
         item.plannedAmount = planned;
         ensurePayments(item);
         if (paymentAmt > 0) {
-          item.payments.push({ id: uid(), amount: paymentAmt, date: date, recordedAt: nowISO() });
+          var member = currentMemberFields();
+          item.payments.push({
+            id: uid(), amount: paymentAmt, date: date,
+            recordedAt: nowISO(), updatedAt: nowISO(),
+            memberId: member.memberId, memberName: member.memberName
+          });
         }
         refreshExpenseDone(item);
         item.actualAmount = expensePaid(item);
+        touchRecord(item);
       } else {
         var newItem = {
           id: uid(),
@@ -1588,10 +2223,16 @@
           date: date,
           payments: [],
           done: false,
-          actualAmount: ''
+          actualAmount: '',
+          updatedAt: nowISO()
         };
         if (paymentAmt > 0) {
-          newItem.payments.push({ id: uid(), amount: paymentAmt, date: date, recordedAt: nowISO() });
+          var newMember = currentMemberFields();
+          newItem.payments.push({
+            id: uid(), amount: paymentAmt, date: date,
+            recordedAt: nowISO(), updatedAt: nowISO(),
+            memberId: newMember.memberId, memberName: newMember.memberName
+          });
         }
         refreshExpenseDone(newItem);
         newItem.actualAmount = expensePaid(newItem);
@@ -1601,8 +2242,9 @@
       var amount = num($('fAmount').value);
       if (item) {
         item.name = name; item.date = date; item.amount = amount;
+        touchRecord(item);
       } else {
-        list.push({ id: uid(), name: name, amount: amount, date: date });
+        list.push({ id: uid(), name: name, amount: amount, date: date, updatedAt: nowISO() });
       }
     }
     if (ed.type === 'income') {
@@ -1621,6 +2263,7 @@
     for (var i = 0; i < list.length; i++) {
       if (list[i].id === ed.id) { list.splice(i, 1); break; }
     }
+    markDeleted(ed.id);
     if (ed.type === 'income') {
       syncBudgetFromIncome(monthKey(state.current));
     }
@@ -1640,6 +2283,7 @@
     e.preventDefault();
     var key = monthKey(state.current);
     state.data.budgetByMonth[key] = num($('fBudget').value);
+    touchBudget(key);
     save();
     render();
     closeDrawers();
@@ -1699,11 +2343,36 @@
     $('paymentForm').addEventListener('submit', submitPayment);
     $('paymentCancelBtn').addEventListener('click', closePaymentDrawer);
     $('paymentMask').addEventListener('click', closePaymentDrawer);
+    $('quickEntryBtn').addEventListener('click', openQuickEntry);
+    $('quickEntryForm').addEventListener('submit', submitQuickEntry);
+    $('quickEntryCancelBtn').addEventListener('click', closeQuickEntry);
+    $('quickEntryMask').addEventListener('click', closeQuickEntry);
+    $('quickUndoBtn').addEventListener('click', undoLastAction);
+    $('quickChips').addEventListener('click', function (e) {
+      var chip = e.target.closest('.quick-chip');
+      if (!chip) return;
+      $('fQuickNote').value = chip.getAttribute('data-note') || '';
+      var planId = chip.getAttribute('data-plan-id') || '';
+      if (planId) $('fQuickPlan').value = planId;
+      $('fQuickAmount').focus();
+    });
 
     $('expenseDetailCloseBtn').addEventListener('click', closeExpenseDetailDrawer);
     $('expenseDetailMask').addEventListener('click', closeExpenseDetailDrawer);
 
     $('syncRetryBtn').addEventListener('click', retrySync);
+    $('memberBookBtn').addEventListener('click', function () { openMemberDrawer(false); });
+    $('memberForm').addEventListener('submit', submitMember);
+    $('memberCancelBtn').addEventListener('click', closeMemberDrawer);
+    $('memberMask').addEventListener('click', closeMemberDrawer);
+    document.querySelectorAll('.member-color').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.memberColor = btn.getAttribute('data-color');
+        document.querySelectorAll('.member-color').forEach(function (item) {
+          item.classList.toggle('active', item === btn);
+        });
+      });
+    });
     $('shareBookBtn').addEventListener('click', openShareDrawer);
     $('copyShareBtn').addEventListener('click', doCopyShare);
     $('closeShareBtn').addEventListener('click', closeShareDrawer);
