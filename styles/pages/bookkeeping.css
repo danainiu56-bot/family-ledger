@@ -811,6 +811,7 @@ button:disabled { cursor: not-allowed; opacity: .48; box-shadow: none; }
 .cockpit-mini b.expense { color: #fcd34d; }
 .cockpit-mini b.saving { color: #93c5fd; }
 .metric-trigger { cursor: pointer; border-radius: 12px; }
+.budget-ring.metric-trigger { border-radius: 50%; }
 .metric-trigger:focus-visible { outline: 2px solid rgba(255,255,255,.65); outline-offset: 3px; }
 .metric-summary { cursor: pointer; }
 .metric-summary:active { background: var(--primary-soft); border-radius: 10px; }
