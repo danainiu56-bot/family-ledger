@@ -874,6 +874,8 @@
     quickUndoTimer: null,
     aiBudgetUndo: null,
     metricContext: null,
+    actionInsights: [],
+    actionDetailTarget: '',
     localDirty: false,
     saveRevision: 0,
     lastConflictNotice: 0
@@ -1167,6 +1169,7 @@
   function openMetricDetail(key) {
     var detail = metricBreakdown(key);
     if (!detail) return;
+    state.actionDetailTarget = '';
     $('metricDetailTitle').textContent = detail.title;
     $('metricDetailFormula').textContent = detail.formula;
     $('metricDetailLines').innerHTML = detail.rows.map(function (row, index) {
@@ -1175,9 +1178,42 @@
     }).join('');
     $('metricDetailNote').textContent = detail.note || '';
     $('metricDetailNote').hidden = !detail.note;
+    $('metricDetailActionBtn').hidden = true;
+    $('metricDetailCloseBtn').textContent = '知道了';
     showDrawer('metricDetailDrawer', 'metricDetailMask');
   }
+  function openActionDetail(index) {
+    var item = state.actionInsights[index];
+    if (!item) return;
+    state.actionDetailTarget = item.target || '';
+    $('metricDetailTitle').textContent = item.title;
+    $('metricDetailFormula').textContent = item.note;
+    $('metricDetailLines').innerHTML = '<div class="action-detail-advice"><span>建议</span><p>' +
+      escapeHtml(item.advice || '查看相关数据后再决定下一步。') + '</p></div>';
+    $('metricDetailNote').hidden = true;
+    $('metricDetailCloseBtn').textContent = '关闭';
+    var actionBtn = $('metricDetailActionBtn');
+    var labels = { plan: '查看计划', category: '查看分类统计', budget: '查看预算计算', risk: '查看余额依据' };
+    actionBtn.textContent = labels[state.actionDetailTarget] || '查看详情';
+    actionBtn.hidden = !labels[state.actionDetailTarget];
+    showDrawer('metricDetailDrawer', 'metricDetailMask');
+  }
+  function followActionDetail() {
+    var target = state.actionDetailTarget;
+    closeMetricDetail();
+    if (target === 'plan') {
+      setTab('plan');
+    } else if (target === 'category') {
+      var categorySection = $('categorySection');
+      if (categorySection) categorySection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (target === 'budget') {
+      openMetricDetail('budgetUsed');
+    } else if (target === 'risk') {
+      openMetricDetail('risk');
+    }
+  }
   function closeMetricDetail() {
+    state.actionDetailTarget = '';
     $('metricDetailMask').hidden = true;
     $('metricDetailDrawer').hidden = true;
   }
@@ -1271,14 +1307,29 @@
       }
     });
     if (forecast.projectedBalance < 0) {
-      insights.push({ level: 'high', title: '计划待付存在缺口', note: '付完计划后还差 ' + fmt(Math.abs(forecast.projectedBalance)), target: 'plan' });
+      insights.push({
+        level: 'high', title: '计划待付存在缺口',
+        note: '付完计划后还差 ' + fmt(Math.abs(forecast.projectedBalance)),
+        advice: '优先检查计划金额，推迟非必要开支，或补充本周期预算。',
+        target: 'plan'
+      });
     } else if (fixedPending > 0) {
-      insights.push({ level: 'info', title: fixedPending + ' 项固定开支待付', note: '合计还需支付 ' + fmt(fixedAmount), target: 'plan' });
+      insights.push({
+        level: 'info', title: fixedPending + ' 项固定开支待付',
+        note: '合计还需支付 ' + fmt(fixedAmount),
+        advice: '进入计划页确认付款日期和金额，避免固定账单遗漏。',
+        target: 'plan'
+      });
     }
     var timePct = forecast.totalDays > 0 ? Math.round((forecast.elapsedDays / forecast.totalDays) * 100) : 0;
     var spendPct = budget > 0 ? Math.round((actualSpent / budget) * 100) : 0;
     if (budget > 0 && spendPct > timePct + 10) {
-      insights.push({ level: 'watch', title: '支出进度偏快', note: '周期过了 ' + timePct + '%，预算已用 ' + spendPct + '%', target: 'home' });
+      insights.push({
+        level: 'watch', title: '支出进度偏快',
+        note: '周期过了 ' + timePct + '%，预算已用 ' + spendPct + '%',
+        advice: '接下来优先参考“安全日额度”，并暂缓非必要的大额支出。',
+        target: 'budget'
+      });
     }
     var history = categoryHistoryAverage(current);
     if (history.periods > 0) {
@@ -1293,6 +1344,7 @@
             level: 'watch',
             title: categories[i].name + '开支明显上涨',
             note: '本期 ' + fmt(categories[i].amount) + '，' + comparison,
+            advice: '查看该分类的具体记录，确认是一次性支出还是持续上涨。',
             target: 'category'
           });
           break;
@@ -1300,7 +1352,12 @@
       }
     }
     if (!insights.length && forecast.projectedBalance >= 0) {
-      insights.push({ level: 'safe', title: '本周期节奏正常', note: '付完计划后预计还剩 ' + fmt(forecast.projectedBalance), target: 'home' });
+      insights.push({
+        level: 'safe', title: '本周期节奏正常',
+        note: '付完计划后预计还剩 ' + fmt(forecast.projectedBalance),
+        advice: '继续按安全日额度安排日常消费，并及时记录固定开支。',
+        target: 'risk'
+      });
     }
     return insights.slice(0, 3);
   }
@@ -1689,6 +1746,7 @@
     var categories = categoryStats(m.expenses);
     var members = memberStats(m.expenses);
     var actionInsights = buildActionInsights(state.current, m.expenses, actualSpent, budget, forecast, categories);
+    state.actionInsights = actionInsights;
     state.metricContext = {
       income: income, saving: saving, spent: spent, planned: planned,
       budget: budget, actualSpent: actualSpent, execPct: execPct, forecast: forecast
@@ -1710,8 +1768,8 @@
         '</b></span><span>已花 <b class="expense">' + fmt(spent) + '</b></span></div>' +
     '</section>';
 
-    var actionHtml = actionInsights.map(function (item) {
-      return '<button type="button" class="action-insight ' + item.level + '" data-target="' + item.target + '">' +
+    var actionHtml = actionInsights.map(function (item, index) {
+      return '<button type="button" class="action-insight ' + item.level + '" data-action-index="' + index + '">' +
         '<i></i><span><b>' + escapeHtml(item.title) + '</b><small>' + escapeHtml(item.note) + '</small></span><em>›</em></button>';
     }).join('');
     html += '<section class="dash-section action-section">' +
@@ -1891,16 +1949,10 @@
         }
       });
     }
-    var insightButtons = view.querySelectorAll('.action-insight[data-target]');
+    var insightButtons = view.querySelectorAll('.action-insight[data-action-index]');
     for (var ii = 0; ii < insightButtons.length; ii++) {
       insightButtons[ii].addEventListener('click', function () {
-        var target = this.getAttribute('data-target');
-        if (target === 'plan') {
-          setTab('plan');
-        } else if (target === 'category') {
-          var section = $('categorySection');
-          if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        openActionDetail(parseInt(this.getAttribute('data-action-index'), 10));
       });
     }
     var genBtn = view.querySelector('#aiGenBtn');
@@ -2826,6 +2878,7 @@
     $('expenseDetailCloseBtn').addEventListener('click', closeExpenseDetailDrawer);
     $('expenseDetailMask').addEventListener('click', closeExpenseDetailDrawer);
     $('metricDetailCloseBtn').addEventListener('click', closeMetricDetail);
+    $('metricDetailActionBtn').addEventListener('click', followActionDetail);
     $('metricDetailMask').addEventListener('click', closeMetricDetail);
     document.querySelectorAll('.metric-summary[data-metric-key]').forEach(function (item) {
       item.addEventListener('click', function () { openMetricDetail(item.getAttribute('data-metric-key')); });

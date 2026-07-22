@@ -831,6 +831,14 @@ button:disabled { cursor: not-allowed; opacity: .48; box-shadow: none; }
 .metric-detail-row.total { background: var(--surface-soft); }
 .metric-detail-row.total span, .metric-detail-row.total b { color: var(--text); font-weight: 800; }
 .metric-detail-note { margin: 12px 0 0; }
+.action-detail-advice {
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+.action-detail-advice span { color: var(--text-muted); font-size: 11px; font-weight: 700; }
+.action-detail-advice p { margin-top: 5px; color: var(--text); font-size: 13px; line-height: 1.65; }
 .family-activity { padding-bottom: 8px; }
 .activity-row {
   width: 100%;
