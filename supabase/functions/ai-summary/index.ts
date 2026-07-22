@@ -26,11 +26,14 @@ function fmt(n: unknown): string {
   return "¥" + s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-interface Segment { label?: string; amount?: number }
+interface Segment { label?: string; amount?: number; memberName?: string }
 interface RankItem { name?: string; paid?: number; segments?: Segment[] }
 interface Overview {
   income?: number; saving?: number; spent?: number; planned?: number;
   budget?: number; balance?: number; ranked?: RankItem[];
+  remainingDays?: number; forecast?: number; nextMonthKey?: string;
+  trends?: unknown[]; recurring?: string[]; categories?: unknown[];
+  members?: unknown[]; localAnomalies?: unknown[];
 }
 
 function buildPrompt(monthKey: string, ov: Overview): string {
@@ -42,6 +45,9 @@ function buildPrompt(monthKey: string, ov: Overview): string {
   lines.push(`计划开支：${fmt(ov.planned)}`);
   if (ov.budget) lines.push(`预算总额：${fmt(ov.budget)}`);
   lines.push(`本期结余：${fmt(ov.balance)}`);
+  lines.push(`剩余天数：${Number(ov.remainingDays) || 0}`);
+  lines.push(`预计周期末开支：${fmt(ov.forecast)}`);
+  lines.push(`建议预算对应周期：${ov.nextMonthKey || ""}`);
   lines.push("");
   lines.push("开支明细（按金额从高到低）：");
   const ranked = Array.isArray(ov.ranked) ? ov.ranked : [];
@@ -53,23 +59,63 @@ function buildPrompt(monthKey: string, ov: Overview): string {
       const segs = (it.segments || []).filter((s) => Number(s.amount) > 0);
       if (segs.length) {
         const detail = segs
-          .map((s) => `${(s.label || "").trim() || "未备注"} ${fmt(s.amount)}`)
+          .map((s) => `${(s.label || "").trim() || "未备注"} ${fmt(s.amount)}（${s.memberName || "未标注"}）`)
           .join("、");
         line += `（明细：${detail}）`;
       }
       lines.push(line);
     });
   }
+  if (Array.isArray(ov.trends) && ov.trends.length) lines.push(`最近周期趋势：${JSON.stringify(ov.trends)}`);
+  if (Array.isArray(ov.recurring) && ov.recurring.length) lines.push(`重复支出候选：${ov.recurring.join("、")}`);
+  if (Array.isArray(ov.categories) && ov.categories.length) lines.push(`标准分类汇总：${JSON.stringify(ov.categories)}`);
+  if (Array.isArray(ov.members) && ov.members.length) lines.push(`成员支出汇总：${JSON.stringify(ov.members)}`);
+  if (Array.isArray(ov.localAnomalies) && ov.localAnomalies.length) {
+    lines.push(`本地规则已识别异常：${JSON.stringify(ov.localAnomalies)}`);
+  }
   return lines.join("\n");
 }
 
 const SYSTEM_PROMPT =
-  `你是一位务实、亲切的家庭理财助手。用户会给你本月（按10号账单周期）的家庭收支数据和开支明细。` +
-  `请用简体中文输出，总长度控制在300字以内，分成三个部分，每部分用方括号标题开头：\n` +
-  `[开支概览] 用一两句话总结这个月钱主要花在哪、收支结构是否健康。\n` +
-  `[可优化项] 结合开支明细和备注，指出可能不必要或偏高的开支，给出2-3条具体、可执行的省钱建议；如果开支都合理，就如实说明，不要硬找问题。\n` +
-  `[下月预算建议] 基于本月情况，给出下个月主要开支项的预算参考或一个总预算区间，帮助用户做预算判断。\n` +
-  `语气自然、不说教，不要编造数据中没有的信息，不要使用多余的 Markdown 符号。`;
+  `你是一位务实、亲切的家庭理财助手。请根据10号账单周期数据优先识别有明确数据证据的异常。` +
+  `只返回合法JSON，不要使用代码围栏。结构必须为：` +
+  `{"overview":"一句话概览","advice":"300字内的简体中文建议，可使用Markdown列表",` +
+  `"risks":[{"title":"异常标题","reason":"数据证据和具体建议","amount":数字}],` +
+  `"actions":[{"type":"set_budget","monthKey":"输入给出的建议预算对应周期","amount":数字,"label":"采用建议预算 ¥金额"}]}` +
+  `。risks最多3项，没有明确异常时必须为空数组；actions最多1项，预算金额必须合理且大于0。` +
+  `不要编造数据，不要输出账本编号、设备ID或成员ID，语气自然、不说教。`;
+
+function parseStructured(content: string, ov: Overview) {
+  const cleaned = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(cleaned);
+    const advice = typeof parsed.advice === "string" ? parsed.advice.trim() : "";
+    if (!advice) return { advice: content, risks: [], actions: [] };
+    const risks = Array.isArray(parsed.risks) ? parsed.risks.slice(0, 3).map((risk: Record<string, unknown>) => ({
+      title: String((risk && risk.title) || "支出提醒").slice(0, 40),
+      reason: String((risk && risk.reason) || "").slice(0, 180),
+      amount: Math.max(0, Number(risk && risk.amount) || 0),
+    })) : [];
+    const actions = Array.isArray(parsed.actions) ? parsed.actions.filter((action: Record<string, unknown>) =>
+      action && action.type === "set_budget" &&
+      action.monthKey === ov.nextMonthKey &&
+      Number(action.amount) > 0
+    ).slice(0, 1).map((action: Record<string, unknown>) => ({
+      type: "set_budget",
+      monthKey: action.monthKey,
+      amount: Math.round(Number(action.amount) * 100) / 100,
+      label: String(action.label || `采用建议预算 ${fmt(action.amount)}`).slice(0, 60),
+    })) : [];
+    return {
+      advice,
+      overview: typeof parsed.overview === "string" ? parsed.overview.slice(0, 180) : "",
+      risks,
+      actions,
+    };
+  } catch {
+    return { advice: content, risks: [], actions: [] };
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -120,11 +166,11 @@ Deno.serve(async (req: Request) => {
       return json({ error: msg }, 502);
     }
 
-    const advice = data && data.choices && data.choices[0] &&
+    const content = data && data.choices && data.choices[0] &&
       data.choices[0].message && (data.choices[0].message.content || "").trim();
-    if (!advice) return json({ error: "AI 未返回内容" }, 502);
+    if (!content) return json({ error: "AI 未返回内容" }, 502);
 
-    return json({ advice, model: MODEL, generatedAt: new Date().toISOString() });
+    return json({ ...parseStructured(content, ov), model: MODEL, generatedAt: new Date().toISOString() });
   } catch (e) {
     return json({ error: "调用 AI 失败：" + ((e && (e as Error).message) || String(e)) }, 502);
   }

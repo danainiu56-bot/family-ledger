@@ -67,17 +67,17 @@
             <span class="summary-value" id="budgetValue">¥0</span>
             <span class="summary-hint">点击设置</span>
           </div>
-          <div class="summary-item">
+          <div class="summary-item metric-summary" data-metric-key="budgetOut">
             <span class="summary-label">预算支出</span>
             <span class="summary-value" id="budgetOutValue">¥0</span>
             <span class="summary-hint">储蓄+开支</span>
           </div>
-          <div class="summary-item">
+          <div class="summary-item metric-summary" data-metric-key="actualSpent">
             <span class="summary-label">已支出</span>
             <span class="summary-value spent" id="actualSpentValue">¥0</span>
             <span class="summary-hint">完成开支+储蓄</span>
           </div>
-          <div class="summary-item">
+          <div class="summary-item metric-summary" data-metric-key="planRemaining">
             <span class="summary-label">还剩</span>
             <span class="summary-value remain" id="remainValue">¥0</span>
           </div>
@@ -166,22 +166,32 @@
         <span class="field-label">金额（必填）</span>
         <div class="quick-amount-wrap"><span>¥</span><input type="text" id="fQuickAmount" inputmode="decimal" placeholder="0.00" required></div>
       </label>
+      <div class="field">
+        <span class="field-label">分类</span>
+        <div class="category-chips" id="quickCategoryChips"></div>
+        <input type="hidden" id="fQuickCategory" value="other">
+      </div>
       <label class="field">
-        <span class="field-label">备注（必填）</span>
-        <input type="text" id="fQuickNote" maxlength="40" placeholder="例如：午餐、加油" required>
+        <span class="field-label">备注（可选）</span>
+        <input type="text" id="fQuickNote" maxlength="40" placeholder="例如：午餐、加油">
       </label>
-      <label class="field">
-        <span class="field-label">付款人</span>
-        <select id="fQuickMember"></select>
-      </label>
-      <label class="field">
-        <span class="field-label">日期</span>
-        <input type="date" id="fQuickDate">
-      </label>
-      <label class="field">
-        <span class="field-label">关联计划（可选）</span>
-        <select id="fQuickPlan"><option value="">不关联计划 · 即时支出</option></select>
-      </label>
+      <details class="quick-more" id="quickMore">
+        <summary>更多选项</summary>
+        <div class="quick-more-fields">
+          <label class="field">
+            <span class="field-label">付款人</span>
+            <select id="fQuickMember"></select>
+          </label>
+          <label class="field">
+            <span class="field-label">日期</span>
+            <input type="date" id="fQuickDate">
+          </label>
+          <label class="field">
+            <span class="field-label">关联计划（可选）</span>
+            <select id="fQuickPlan"><option value="">不关联计划 · 即时支出</option></select>
+          </label>
+        </div>
+      </details>
       <div class="drawer-actions">
         <button type="button" class="btn btn-cancel" id="quickEntryCancelBtn">取消</button>
         <button type="submit" class="btn btn-primary">保存支出</button>
@@ -245,8 +255,16 @@
       </label>
       <div data-mode="expense" hidden>
         <label class="field">
+          <span class="field-label">分类</span>
+          <select id="fCategory"></select>
+        </label>
+        <label class="field">
           <span class="field-label">计划金额</span>
           <input type="text" id="fPlanned" inputmode="decimal" placeholder="0.00">
+        </label>
+        <label class="fixed-toggle">
+          <input type="checkbox" id="fIsFixed">
+          <span><b>固定开支</b><small>每个新周期自动复制计划金额，不复制付款记录</small></span>
         </label>
         <div class="expense-summary" id="expenseSummary" hidden>
           <span>已支出 <b id="expensePaidText">¥0</b></span>
@@ -347,6 +365,18 @@
         <button type="submit" class="btn btn-primary">保存</button>
       </div>
     </form>
+  </div>
+
+  <div class="drawer-mask" id="metricDetailMask" hidden></div>
+  <div class="drawer drawer-sm metric-detail-drawer" id="metricDetailDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <h3 class="drawer-title" id="metricDetailTitle">计算明细</h3>
+    <p class="metric-formula" id="metricDetailFormula"></p>
+    <div class="metric-detail-lines" id="metricDetailLines"></div>
+    <p class="drawer-desc metric-detail-note" id="metricDetailNote"></p>
+    <div class="drawer-actions">
+      <button type="button" class="btn btn-primary" id="metricDetailCloseBtn">知道了</button>
+    </div>
   </div>
 
   <div class="toast" id="toast" aria-live="polite"></div>

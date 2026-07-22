@@ -1,4 +1,4 @@
-// Cloudflare Worker: AI 开支建议代理
+// Cloudflare Worker: 家庭账本异常分析代理
 // 环境变量：ZHIPU_API_KEY
 // 部署后前端请求该 Worker 地址，避免 Supabase Edge Function 到智谱接口超时。
 
@@ -85,16 +85,25 @@ function buildPrompt(monthKey, ov) {
   if (Array.isArray(ov.recurring) && ov.recurring.length) {
     lines.push(`固定或重复支出候选：${ov.recurring.join("、")}`);
   }
+  if (Array.isArray(ov.categories) && ov.categories.length) {
+    lines.push(`标准分类汇总：${JSON.stringify(ov.categories)}`);
+  }
+  if (Array.isArray(ov.members) && ov.members.length) {
+    lines.push(`成员支出汇总：${JSON.stringify(ov.members)}`);
+  }
+  if (Array.isArray(ov.localAnomalies) && ov.localAnomalies.length) {
+    lines.push(`本地规则已识别异常：${JSON.stringify(ov.localAnomalies)}`);
+  }
   return lines.join("\n");
 }
 
 const SYSTEM_PROMPT =
-  `你是一位务实、亲切的家庭理财助手。请根据10号账单周期数据识别风险、趋势和可优化开支。` +
+  `你是一位务实、亲切的家庭理财助手。请根据10号账单周期数据优先识别有明确数据证据的异常。` +
   `只返回合法 JSON，不要使用代码围栏。结构必须为：` +
   `{"overview":"一句话概览","advice":"300字内的简体中文建议，可使用Markdown列表",` +
-  `"risks":[{"title":"风险标题","reason":"证据和建议","amount":数字}],` +
+  `"risks":[{"title":"异常标题","reason":"数据证据和具体建议","amount":数字}],` +
   `"actions":[{"type":"set_budget","monthKey":"输入给出的建议预算对应周期","amount":数字,"label":"采用建议预算 ¥金额"}]}` +
-  `。risks 最多3项；若数据不足可为空。actions 最多1项，预算金额必须合理且大于0。` +
+  `。risks 最多3项；没有明确异常时必须为空数组，不能为了给建议而编造异常。actions 最多1项，预算金额必须合理且大于0。` +
   `不要编造数据，不要说教，不要输出账本编号、设备ID或成员ID。`;
 
 function parseStructured(content, ov) {

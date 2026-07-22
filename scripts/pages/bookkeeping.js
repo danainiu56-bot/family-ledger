@@ -27,6 +27,47 @@
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
   function monthKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
   var CYCLE_START_DAY = 10;
+  var EXPENSE_CATEGORIES = [
+    { id: 'food', name: '餐饮' },
+    { id: 'housing', name: '住房' },
+    { id: 'transport', name: '交通' },
+    { id: 'daily', name: '日用' },
+    { id: 'medical', name: '医疗' },
+    { id: 'education', name: '教育' },
+    { id: 'children', name: '育儿' },
+    { id: 'entertainment', name: '娱乐' },
+    { id: 'social', name: '人情' },
+    { id: 'other', name: '其他' }
+  ];
+  function normalizeCategoryId(id) {
+    for (var i = 0; i < EXPENSE_CATEGORIES.length; i++) {
+      if (EXPENSE_CATEGORIES[i].id === id) return id;
+    }
+    return 'other';
+  }
+  function categoryName(id) {
+    id = normalizeCategoryId(id);
+    for (var i = 0; i < EXPENSE_CATEGORIES.length; i++) {
+      if (EXPENSE_CATEGORIES[i].id === id) return EXPENSE_CATEGORIES[i].name;
+    }
+    return '其他';
+  }
+  function categoryOptions(selected) {
+    selected = normalizeCategoryId(selected);
+    return EXPENSE_CATEGORIES.map(function (item) {
+      return '<option value="' + item.id + '"' + (item.id === selected ? ' selected' : '') + '>' +
+        item.name + '</option>';
+    }).join('');
+  }
+  function stableId(value) {
+    var h = 2166136261;
+    value = String(value || '');
+    for (var i = 0; i < value.length; i++) {
+      h ^= value.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return 'carry_' + (h >>> 0).toString(36);
+  }
   function cycleAnchor(d) {
     var y = d.getFullYear();
     var mo = d.getMonth();
@@ -269,6 +310,57 @@
   function getMonth(key) {
     if (!state.data.months[key]) state.data.months[key] = emptyMonth();
     return state.data.months[key];
+  }
+  function shiftedCycleDate(dateValue, targetKey) {
+    var day = CYCLE_START_DAY;
+    var match = /^\d{4}-\d{2}-(\d{2})$/.exec(dateValue || '');
+    if (match) day = parseInt(match[1], 10) || CYCLE_START_DAY;
+    var parts = targetKey.split('-');
+    var year = parseInt(parts[0], 10);
+    var month = parseInt(parts[1], 10) - 1;
+    var lastDay = new Date(year, month + 1, 0).getDate();
+    return year + '-' + pad2(month + 1) + '-' + pad2(Math.min(day, lastDay));
+  }
+  function ensureFixedPlansForKey(key) {
+    if (!/^\d{4}-\d{2}$/.test(key || '')) return false;
+    var targetParts = key.split('-');
+    var targetDate = new Date(parseInt(targetParts[0], 10), parseInt(targetParts[1], 10) - 1, 1);
+    var previousKey = monthKey(new Date(targetDate.getFullYear(), targetDate.getMonth() - 1, 1));
+    var previous = state.data.months[previousKey];
+    if (!previous || !previous.expenses) return false;
+    var target = getMonth(key);
+    var changed = false;
+    previous.expenses.forEach(function (source) {
+      if (!source.isFixed || source.source === 'quick') return;
+      var seriesId = source.fixedSeriesId || ('fixed_' + source.id);
+      if (!source.fixedSeriesId) {
+        source.fixedSeriesId = seriesId;
+        touchRecord(source);
+        changed = true;
+      }
+      var carriedId = stableId(seriesId + '|' + key);
+      if (state.data.deletedRecords && state.data.deletedRecords[carriedId]) return;
+      var exists = target.expenses.some(function (item) {
+        return item.id === carriedId || (item.fixedSeriesId === seriesId && item.carriedFromId === source.id);
+      });
+      if (exists) return;
+      target.expenses.push({
+        id: carriedId,
+        name: source.name,
+        categoryId: normalizeCategoryId(source.categoryId),
+        plannedAmount: num(source.plannedAmount),
+        date: shiftedCycleDate(source.date, key),
+        isFixed: true,
+        fixedSeriesId: seriesId,
+        carriedFromId: source.id,
+        payments: [],
+        done: false,
+        actualAmount: '',
+        updatedAt: nowISO()
+      });
+      changed = true;
+    });
+    return changed;
   }
 
   /* ---------- 云端同步 ---------- */
@@ -781,6 +873,7 @@
     quickUndo: null,
     quickUndoTimer: null,
     aiBudgetUndo: null,
+    metricContext: null,
     localDirty: false,
     saveRevision: 0,
     lastConflictNotice: 0
@@ -1022,6 +1115,72 @@
       risk: risk
     };
   }
+  function metricBreakdown(key) {
+    var c = state.metricContext;
+    if (!c) return null;
+    var rows = [];
+    var result = { title: '计算明细', formula: '', rows: rows, note: '' };
+    if (key === 'remainingBudget') {
+      result.title = '本周期可用余额';
+      result.formula = '预算总额 − 储蓄 − 已花';
+      rows.push(['预算总额', fmt(c.budget)], ['减：储蓄', fmt(c.saving)], ['减：已花', fmt(c.spent)], ['结果', fmt(c.forecast.remainingBudget)]);
+      result.note = '储蓄会从可消费余额中预留，但不计入“已花”。';
+    } else if (key === 'budgetUsed') {
+      result.title = '预算已用';
+      result.formula = '（储蓄 + 已花）÷ 预算总额';
+      rows.push(['储蓄 + 已花', fmt(c.actualSpent)], ['预算总额', fmt(c.budget)], ['结果', c.execPct + '%']);
+    } else if (key === 'safeDaily') {
+      result.title = '安全日额度';
+      result.formula = '（可用余额 − 计划待付）÷ 剩余天数';
+      rows.push(['可用余额', fmt(c.forecast.remainingBudget)], ['减：计划待付', fmt(c.forecast.fixedRemaining)], ['剩余天数', c.forecast.remainingDays + ' 天'], ['结果', fmt(c.forecast.dailyAvailable) + ' / 天']);
+      result.note = '先为尚未支付的计划开支留足金额，再计算每天可以安心使用的额度。';
+    } else if (key === 'averageDaily') {
+      result.title = '平均每日余额';
+      result.formula = '可用余额 ÷ 剩余天数';
+      rows.push(['可用余额', fmt(c.forecast.remainingBudget)], ['剩余天数', c.forecast.remainingDays + ' 天'], ['结果', fmt(c.forecast.availableDaily) + ' / 天']);
+      result.note = '这是未预留计划待付的平均数，不建议直接当作每天消费上限。';
+    } else if (key === 'risk') {
+      result.title = '余额风险判断';
+      result.formula = '可用余额 − 计划待付';
+      rows.push(['可用余额', fmt(c.forecast.remainingBudget)], ['计划待付', fmt(c.forecast.fixedRemaining)], ['安全余量', fmt(c.forecast.projectedBalance)], ['判断', c.forecast.risk.label]);
+    } else if (key === 'budgetTotal') {
+      result.title = '预算总额';
+      result.formula = '本周期收入合计';
+      rows.push(['收入合计', fmt(c.income)], ['预算总额', fmt(c.budget)]);
+    } else if (key === 'budgetOut') {
+      result.title = '预算支出';
+      result.formula = '储蓄 + 计划开支';
+      rows.push(['储蓄', fmt(c.saving)], ['计划开支', fmt(c.planned)], ['结果', fmt(c.saving + c.planned)]);
+    } else if (key === 'actualSpent') {
+      result.title = '已支出';
+      result.formula = '储蓄 + 已支付开支';
+      rows.push(['储蓄', fmt(c.saving)], ['已支付开支', fmt(c.spent)], ['结果', fmt(c.actualSpent)]);
+    } else if (key === 'planRemaining') {
+      result.title = '计划剩余';
+      result.formula = '预算总额 − 储蓄 − 计划开支';
+      rows.push(['预算总额', fmt(c.budget)], ['减：储蓄', fmt(c.saving)], ['减：计划开支', fmt(c.planned)], ['结果', fmt(c.budget - c.saving - c.planned)]);
+    } else {
+      return null;
+    }
+    return result;
+  }
+  function openMetricDetail(key) {
+    var detail = metricBreakdown(key);
+    if (!detail) return;
+    $('metricDetailTitle').textContent = detail.title;
+    $('metricDetailFormula').textContent = detail.formula;
+    $('metricDetailLines').innerHTML = detail.rows.map(function (row, index) {
+      return '<div class="metric-detail-row' + (index === detail.rows.length - 1 ? ' total' : '') + '">' +
+        '<span>' + escapeHtml(row[0]) + '</span><b>' + escapeHtml(row[1]) + '</b></div>';
+    }).join('');
+    $('metricDetailNote').textContent = detail.note || '';
+    $('metricDetailNote').hidden = !detail.note;
+    showDrawer('metricDetailDrawer', 'metricDetailMask');
+  }
+  function closeMetricDetail() {
+    $('metricDetailMask').hidden = true;
+    $('metricDetailDrawer').hidden = true;
+  }
   function recentFamilyPayments(expenses) {
     var rows = [];
     (expenses || []).forEach(function (expense) {
@@ -1039,6 +1198,119 @@
     });
     return rows.sort(function (a, b) { return a.sortAt < b.sortAt ? 1 : -1; }).slice(0, 5);
   }
+  function categoryStats(expenses) {
+    var map = {};
+    EXPENSE_CATEGORIES.forEach(function (category) {
+      map[category.id] = { id: category.id, name: category.name, amount: 0, count: 0 };
+    });
+    (expenses || []).forEach(function (expense) {
+      var fallback = normalizeCategoryId(expense.categoryId);
+      var payments = expense.payments || [];
+      if (!payments.length && expensePaid(expense) > 0) {
+        map[fallback].amount += expensePaid(expense);
+        map[fallback].count += 1;
+      }
+      payments.forEach(function (payment) {
+        var amount = num(payment.amount);
+        if (amount <= 0) return;
+        var categoryId = normalizeCategoryId(payment.categoryId || fallback);
+        map[categoryId].amount += amount;
+        map[categoryId].count += 1;
+      });
+    });
+    return Object.keys(map).map(function (id) { return map[id]; })
+      .filter(function (item) { return item.amount > 0; })
+      .sort(function (a, b) { return b.amount - a.amount; });
+  }
+  function memberStats(expenses) {
+    var map = {};
+    (expenses || []).forEach(function (expense) {
+      var payments = expense.payments || [];
+      if (!payments.length && expensePaid(expense) > 0) {
+        var legacyAmount = expensePaid(expense);
+        if (!map._unknown) map._unknown = { id: '_unknown', name: '未标注', amount: 0, count: 0 };
+        map._unknown.amount += legacyAmount;
+        map._unknown.count += 1;
+      }
+      payments.forEach(function (payment) {
+        var amount = num(payment.amount);
+        if (amount <= 0) return;
+        var id = payment.memberId || '_unknown';
+        if (!map[id]) map[id] = { id: id, name: payment.memberName || '未标注', amount: 0, count: 0 };
+        map[id].amount += amount;
+        map[id].count += 1;
+      });
+    });
+    return Object.keys(map).map(function (id) { return map[id]; })
+      .sort(function (a, b) { return b.amount - a.amount; });
+  }
+  function categoryHistoryAverage(current) {
+    var totals = {};
+    var periods = 0;
+    for (var offset = 1; offset <= 3; offset++) {
+      var d = new Date(current.getFullYear(), current.getMonth() - offset, 1);
+      var month = state.data.months && state.data.months[monthKey(d)];
+      if (!month) continue;
+      periods += 1;
+      categoryStats(month.expenses).forEach(function (item) {
+        totals[item.id] = (totals[item.id] || 0) + item.amount;
+      });
+    }
+    Object.keys(totals).forEach(function (id) { totals[id] = periods ? totals[id] / periods : 0; });
+    return { periods: periods, totals: totals };
+  }
+  function buildActionInsights(current, expenses, actualSpent, budget, forecast, categories) {
+    var insights = [];
+    var fixedPending = 0;
+    var fixedAmount = 0;
+    (expenses || []).forEach(function (item) {
+      var remaining = Math.max(0, num(item.plannedAmount) - expensePaid(item));
+      if (item.isFixed && remaining > 0) {
+        fixedPending += 1;
+        fixedAmount += remaining;
+      }
+    });
+    if (forecast.projectedBalance < 0) {
+      insights.push({ level: 'high', title: '计划待付存在缺口', note: '付完计划后还差 ' + fmt(Math.abs(forecast.projectedBalance)), target: 'plan' });
+    } else if (fixedPending > 0) {
+      insights.push({ level: 'info', title: fixedPending + ' 项固定开支待付', note: '合计还需支付 ' + fmt(fixedAmount), target: 'plan' });
+    }
+    var timePct = forecast.totalDays > 0 ? Math.round((forecast.elapsedDays / forecast.totalDays) * 100) : 0;
+    var spendPct = budget > 0 ? Math.round((actualSpent / budget) * 100) : 0;
+    if (budget > 0 && spendPct > timePct + 10) {
+      insights.push({ level: 'watch', title: '支出进度偏快', note: '周期过了 ' + timePct + '%，预算已用 ' + spendPct + '%', target: 'home' });
+    }
+    var history = categoryHistoryAverage(current);
+    if (history.periods > 0) {
+      for (var i = 0; i < categories.length; i++) {
+        var avg = history.totals[categories[i].id] || 0;
+        if (categories[i].amount >= 100 && avg > 0 && categories[i].amount > avg * 1.3) {
+          var increasePct = Math.round((categories[i].amount / avg - 1) * 100);
+          var comparison = increasePct > 500
+            ? '是近 ' + history.periods + ' 期均值的 ' + Math.round(categories[i].amount / avg) + ' 倍'
+            : '较近 ' + history.periods + ' 期均值高 ' + increasePct + '%';
+          insights.push({
+            level: 'watch',
+            title: categories[i].name + '开支明显上涨',
+            note: '本期 ' + fmt(categories[i].amount) + '，' + comparison,
+            target: 'category'
+          });
+          break;
+        }
+      }
+    }
+    if (!insights.length && forecast.projectedBalance >= 0) {
+      insights.push({ level: 'safe', title: '本周期节奏正常', note: '付完计划后预计还剩 ' + fmt(forecast.projectedBalance), target: 'home' });
+    }
+    return insights.slice(0, 3);
+  }
+  function localAnomalies(insights) {
+    return (insights || []).filter(function (item) {
+      return item.level === 'high' || item.level === 'watch';
+    }).map(function (item) {
+      return { title: item.title, reason: item.note, amount: 0 };
+    }).slice(0, 3);
+  }
   function aiTrendContext(current) {
     var trends = [];
     var nameCounts = {};
@@ -1048,11 +1320,12 @@
       var expenses = monthDataReadonly(key).expenses || [];
       var total = 0;
       var categories = {};
+      categoryStats(expenses).forEach(function (category) {
+        total += category.amount;
+        categories[category.name] = category.amount;
+      });
       expenses.forEach(function (expense) {
-        var paid = expensePaid(expense);
-        total += paid;
-        if (paid > 0) {
-          categories[expense.name || '未命名'] = (categories[expense.name || '未命名'] || 0) + paid;
+        if (expensePaid(expense) > 0) {
           nameCounts[expense.name || '未命名'] = (nameCounts[expense.name || '未命名'] || 0) + 1;
         }
       });
@@ -1074,7 +1347,8 @@
     var parts = [
       ov.income, ov.saving, ov.spent, ov.planned, ov.budget,
       ov.remainingDays, ov.forecast, JSON.stringify(ov.trends || []),
-      JSON.stringify(ov.recurring || [])
+      JSON.stringify(ov.recurring || []), JSON.stringify(ov.categories || []),
+      JSON.stringify(ov.members || []), JSON.stringify(ov.localAnomalies || [])
     ];
     var ranked = ov.ranked || [];
     for (var i = 0; i < ranked.length; i++) {
@@ -1102,12 +1376,13 @@
     } catch (e) { return ''; }
   }
   var AI_SYSTEM_PROMPT =
-    '你是一位务实、亲切的家庭理财助手。用户会给你本月（按10号账单周期）的家庭收支数据和开支明细。' +
-    '请用简体中文输出，总长度控制在300字以内，分成三个部分，每部分用方括号标题开头：\n' +
-    '[开支概览] 用一两句话总结这个月钱主要花在哪、收支结构是否健康。\n' +
-    '[可优化项] 结合开支明细和备注，指出可能不必要或偏高的开支，给出2-3条具体、可执行的省钱建议；如果开支都合理，就如实说明，不要硬找问题。\n' +
-    '[下月预算建议] 基于本月情况，给出下个月主要开支项的预算参考或一个总预算区间，帮助用户做预算判断。\n' +
-    '语气自然、不说教，不要编造数据中没有的信息。可以用 Markdown：重点数字或关键词用 **加粗**，多条建议用「- 」开头的列表，让结构更清晰。';
+    '你是一位务实、亲切的家庭理财助手。请根据10号账单周期数据优先识别有明确数据证据的异常。' +
+    '只返回合法JSON，不要使用代码围栏。结构为：' +
+    '{"overview":"一句话概览","advice":"300字内的具体建议，可使用Markdown列表",' +
+    '"risks":[{"title":"异常标题","reason":"数据证据和建议","amount":数字}],' +
+    '"actions":[{"type":"set_budget","monthKey":"输入给出的建议预算周期","amount":数字,"label":"采用建议预算 ¥金额"}]}。' +
+    'risks最多3项，没有异常时必须为空数组；不要为了给建议而编造异常。actions最多1项。' +
+    '不要输出账本编号、设备ID或成员ID，语气自然、不说教。';
   function buildAiPrompt(key, ov) {
     var lines = [];
     lines.push('统计周期：' + key + '（每月10号到次月10号为一个账单周期）');
@@ -1140,6 +1415,9 @@
     }
     if (ov.trends && ov.trends.length) lines.push('最近周期趋势：' + JSON.stringify(ov.trends));
     if (ov.recurring && ov.recurring.length) lines.push('重复支出候选：' + ov.recurring.join('、'));
+    if (ov.categories && ov.categories.length) lines.push('分类汇总：' + JSON.stringify(ov.categories));
+    if (ov.members && ov.members.length) lines.push('成员汇总：' + JSON.stringify(ov.members));
+    if (ov.localAnomalies && ov.localAnomalies.length) lines.push('本地规则已识别异常：' + JSON.stringify(ov.localAnomalies));
     return lines.join('\n');
   }
   function aiPayloadOverview(ov) {
@@ -1148,6 +1426,8 @@
       budget: ov.budget, balance: ov.balance, remainingDays: ov.remainingDays,
       forecast: ov.forecast, nextMonthKey: ov.nextMonthKey,
       trends: ov.trends || [], recurring: ov.recurring || [],
+      categories: ov.categories || [], members: ov.members || [],
+      localAnomalies: ov.localAnomalies || [],
       ranked: (ov.ranked || []).slice(0, 20).map(function (item) {
         return {
           name: item.name,
@@ -1162,6 +1442,27 @@
         };
       })
     };
+  }
+  function parseAiStructuredContent(content, ov) {
+    var cleaned = String(content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    try {
+      var parsed = JSON.parse(cleaned);
+      var advice = typeof parsed.advice === 'string' ? parsed.advice.trim() : '';
+      if (!advice) throw new Error('AI 未返回建议');
+      var risks = Array.isArray(parsed.risks) ? parsed.risks.slice(0, 3).map(function (risk) {
+        return {
+          title: String((risk && risk.title) || '支出提醒').slice(0, 40),
+          reason: String((risk && risk.reason) || '').slice(0, 180),
+          amount: Math.max(0, num(risk && risk.amount))
+        };
+      }) : [];
+      var actions = Array.isArray(parsed.actions) ? parsed.actions.filter(function (action) {
+        return action && action.type === 'set_budget' && action.monthKey === ov.nextMonthKey && num(action.amount) > 0;
+      }).slice(0, 1) : [];
+      return { advice: advice, overview: String(parsed.overview || '').slice(0, 180), risks: risks, actions: actions };
+    } catch (e) {
+      return { advice: String(content || '').trim(), risks: [], actions: [] };
+    }
   }
   function fetchAiSummaryH5(key, ov) {
     var c = getConfig();
@@ -1188,11 +1489,13 @@
     }).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (data) {
         if (direct) {
-          var advice = data && data.choices && data.choices[0] && data.choices[0].message && (data.choices[0].message.content || '').trim();
-          if (!res.ok || !advice) {
+          var content = data && data.choices && data.choices[0] && data.choices[0].message && (data.choices[0].message.content || '').trim();
+          if (!res.ok || !content) {
             throw new Error((data && data.error && data.error.message) || ('HTTP ' + res.status));
           }
-          return { advice: advice, generatedAt: new Date().toISOString() };
+          var structured = parseAiStructuredContent(content, ov);
+          structured.generatedAt = new Date().toISOString();
+          return structured;
         }
         if (!res.ok || !data || !data.advice) {
           throw new Error((data && data.error) || ('HTTP ' + res.status));
@@ -1229,57 +1532,12 @@
     return html;
   }
   function streamAiSummaryH5(key, ov, onDelta) {
-    var c = getConfig();
-    if (!c.zhipuApiKey || typeof ReadableStream === 'undefined') {
-      return fetchAiSummaryH5(key, ov);
-    }
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 45000) : null;
-    return fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.zhipuApiKey },
-      body: JSON.stringify({
-        model: c.zhipuModel || 'glm-4-flash',
-        messages: [{ role: 'system', content: AI_SYSTEM_PROMPT }, { role: 'user', content: buildAiPrompt(key, ov) }],
-        temperature: 0.6, max_tokens: 800, stream: true
-      }),
-      signal: ctrl ? ctrl.signal : undefined
-    }).then(function (res) {
-      if (!res.ok || !res.body) {
-        return res.json().catch(function () { return null; }).then(function (d) {
-          throw new Error((d && d.error && d.error.message) || ('HTTP ' + res.status));
-        });
-      }
-      var reader = res.body.getReader();
-      var decoder = new TextDecoder('utf-8');
-      var full = '', buf = '';
-      function pump() {
-        return reader.read().then(function (r) {
-          if (r.done) return full;
-          buf += decoder.decode(r.value, { stream: true });
-          var parts = buf.split('\n');
-          buf = parts.pop();
-          for (var i = 0; i < parts.length; i++) {
-            var line = parts[i].trim();
-            if (!line || line.indexOf('data:') !== 0) continue;
-            var payload = line.slice(5).trim();
-            if (payload === '[DONE]') continue;
-            try {
-              var j = JSON.parse(payload);
-              var delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-              if (delta) { full += delta; if (onDelta) onDelta(full); }
-            } catch (e) {}
-          }
-          return pump();
-        });
-      }
-      return pump();
-    }).finally(function () { if (timer) clearTimeout(timer); });
+    return fetchAiSummaryH5(key, ov);
   }
   function renderAiStreaming(text) {
     var sec = document.querySelector('.ai-section');
     if (!sec) return;
-    sec.innerHTML = '<div class="dash-title">AI 开支建议 <span class="dash-sub">GLM-4-Flash</span></div>' +
+    sec.innerHTML = '<div class="dash-title">支出异常提醒 <span class="dash-sub">GLM-4-Flash</span></div>' +
       '<div class="ai-advice">' + aiMdToHtml(text) + '<span class="ai-caret"></span></div>';
   }
   function aiCardHtml(ov, key) {
@@ -1298,27 +1556,31 @@
     }
     var inner;
     if (s.state === 'idle') {
-      inner = (s.stale ? '<div class="ai-hint">开支有更新，可重新生成最新建议</div>' : '') +
-        '<button class="ai-btn" id="aiGenBtn">生成 AI 建议</button>' +
-        '<div class="ai-tip">根据本月开支明细，帮你分析可优化的开支并给出下月预算参考</div>';
+      var local = ov.localAnomalies && ov.localAnomalies.length
+        ? aiStructuredHtml({ risks: ov.localAnomalies })
+        : '<div class="ai-clear">暂无明显异常</div>';
+      inner = local +
+        (s.stale ? '<div class="ai-hint">开支有更新，可重新分析最新数据</div>' : '') +
+        '<button class="ai-btn" id="aiGenBtn">用 AI 深度分析</button>' +
+        '<div class="ai-tip">AI 会核对分类趋势和家庭支出，只提示有数据依据的异常</div>';
     } else if (s.state === 'loading') {
       inner = '<div class="ai-loading"><i class="ai-spinner"></i><span>AI 正在分析本月开支…</span></div>';
     } else if (s.state === 'streaming') {
       inner = '<div class="ai-advice">' + aiMdToHtml(s.advice) + '<span class="ai-caret"></span></div>';
     } else if (s.state === 'done') {
-      inner = '<div class="ai-advice">' + aiMdToHtml(s.advice) + '</div>' +
-        aiStructuredHtml(s.result) +
+      inner = aiStructuredHtml(s.result, true) +
+        '<div class="ai-advice">' + aiMdToHtml(s.advice) + '</div>' +
         '<div class="ai-foot"><span class="ai-time">' + (s.cached ? '上次生成 ' : '生成于 ') + escapeHtml(s.time) + '</span>' +
-        '<button type="button" class="ai-regen" id="aiRegen">重新生成</button></div>';
+        '<button type="button" class="ai-regen" id="aiRegen">重新分析</button></div>';
     } else {
       inner = '<div class="ai-error">' + escapeHtml(s.error) + '</div>' +
         '<button class="ai-btn" id="aiGenBtn">重试</button>';
     }
     return '<section class="dash-section ai-section">' +
-      '<div class="dash-title">AI 开支建议 <span class="dash-sub">GLM-4-Flash</span></div>' +
+      '<div class="dash-title">支出异常提醒 <span class="dash-sub">规则检测 + AI</span></div>' +
       inner + '</section>';
   }
-  function aiStructuredHtml(result) {
+  function aiStructuredHtml(result, showClear) {
     if (!result || typeof result !== 'object') return '';
     var html = '';
     var risks = Array.isArray(result.risks) ? result.risks.slice(0, 3) : [];
@@ -1328,6 +1590,8 @@
           '<span>' + escapeHtml(risk.reason || '') + '</span></div>' +
           (num(risk.amount) > 0 ? '<strong>' + fmt(num(risk.amount)) + '</strong>' : '') + '</div>';
       }).join('') + '</div>';
+    } else if (showClear) {
+      html += '<div class="ai-clear">AI 未发现有明确证据的异常</div>';
     }
     var actions = Array.isArray(result.actions) ? result.actions.filter(function (action) {
       return action && action.type === 'set_budget' && /^\d{4}-\d{2}$/.test(action.monthKey || '') && num(action.amount) > 0;
@@ -1421,22 +1685,37 @@
     var execPct = budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0;
     var execOver = budget > 0 && actualSpent > budget;
     var forecast = cycleMetrics(state.current, actualSpent, budget, m.expenses);
+    var planned = sum(m.expenses, 'plannedAmount');
+    var categories = categoryStats(m.expenses);
+    var members = memberStats(m.expenses);
+    var actionInsights = buildActionInsights(state.current, m.expenses, actualSpent, budget, forecast, categories);
+    state.metricContext = {
+      income: income, saving: saving, spent: spent, planned: planned,
+      budget: budget, actualSpent: actualSpent, execPct: execPct, forecast: forecast
+    };
 
     var html = '';
     html += '<section class="finance-cockpit">' +
-      '<div class="cockpit-top"><div><div class="cockpit-kicker">本周期可用余额</div>' +
+      '<div class="cockpit-top"><div class="metric-trigger" data-metric-key="remainingBudget" role="button" tabindex="0"><div class="cockpit-kicker">本周期可用余额 <small>查看计算</small></div>' +
         '<div class="cockpit-balance' + (forecast.remainingBudget < 0 ? ' neg' : '') + '">' + fmt(forecast.remainingBudget) + '</div>' +
         '<div class="cockpit-cycle">' + escapeHtml(cycleRangeText(state.current)) + ' · 剩余 ' + forecast.remainingDays + ' 天</div></div>' +
-        '<div class="budget-ring" style="--ring-pct:' + execPct + ';--ring-color:' + (execOver ? '#fca5a5' : '#93c5fd') + '">' +
+        '<div class="budget-ring metric-trigger" data-metric-key="budgetUsed" role="button" tabindex="0" style="--ring-pct:' + execPct + ';--ring-color:' + (execOver ? '#fca5a5' : '#93c5fd') + '">' +
           '<div><b>' + execPct + '%</b><span>预算已用</span></div></div></div>' +
       '<div class="cockpit-grid">' +
-        '<div><span>今日建议可花</span><b>' + fmt(forecast.dailyAvailable) + '</b></div>' +
-        '<div><span>每天可用余额</span><b>' + fmt(forecast.availableDaily) + '</b><small>可用余额 ÷ 可用天数</small></div>' +
+        '<div class="metric-trigger" data-metric-key="safeDaily" role="button" tabindex="0"><span>安全日额度</span><b>' + fmt(forecast.dailyAvailable) + '</b><small>已预留计划待付</small></div>' +
+        '<div class="metric-trigger" data-metric-key="averageDaily" role="button" tabindex="0"><span>平均每日余额</span><b>' + fmt(forecast.availableDaily) + '</b><small>未预留计划待付</small></div>' +
       '</div>' +
-      '<div class="risk-banner ' + forecast.risk.level + '"><i></i><div><b>' + forecast.risk.label + '</b><span>' + forecast.risk.note + '</span></div></div>' +
+      '<div class="risk-banner metric-trigger ' + forecast.risk.level + '" data-metric-key="risk" role="button" tabindex="0"><i></i><div><b>' + forecast.risk.label + '</b><span>' + forecast.risk.note + '</span></div><em>查看依据</em></div>' +
       '<div class="cockpit-mini"><span>收入 <b class="income">' + fmt(income) + '</b></span><span>储蓄 <b class="saving">' + fmt(saving) +
         '</b></span><span>已花 <b class="expense">' + fmt(spent) + '</b></span></div>' +
     '</section>';
+
+    var actionHtml = actionInsights.map(function (item) {
+      return '<button type="button" class="action-insight ' + item.level + '" data-target="' + item.target + '">' +
+        '<i></i><span><b>' + escapeHtml(item.title) + '</b><small>' + escapeHtml(item.note) + '</small></span><em>›</em></button>';
+    }).join('');
+    html += '<section class="dash-section action-section">' +
+      '<div class="dash-title">本周期行动 <span class="dash-sub">最多 3 条</span></div>' + actionHtml + '</section>';
 
     var recent = recentFamilyPayments(m.expenses);
     var recentHtml = recent.length ? recent.map(function (row) {
@@ -1448,6 +1727,25 @@
     }).join('') : '<div class="dash-empty">本周期还没有家庭支出</div>';
     html += '<section class="dash-section family-activity">' +
       '<div class="dash-title">最近家庭动态 <span class="dash-sub">最近 5 笔</span></div>' + recentHtml + '</section>';
+
+    var memberTotal = members.reduce(function (total, item) { return total + item.amount; }, 0);
+    var memberHtml = members.length ? members.map(function (item) {
+      return '<div class="member-stat-row"><div class="member-stat-head"><span>' + escapeHtml(item.name) +
+        ' <small>' + item.count + ' 笔</small></span><b>' + fmt(item.amount) + ' · ' + pct(item.amount, memberTotal) + '%</b></div>' +
+        '<div class="member-stat-bar"><i style="width:' + Math.max(3, pct(item.amount, memberTotal)) + '%"></i></div></div>';
+    }).join('') : '<div class="dash-empty">本周期还没有成员支出</div>';
+    html += '<section class="dash-section member-stats">' +
+      '<div class="dash-title">成员支出 <span class="dash-sub">按付款人统计</span></div>' + memberHtml + '</section>';
+
+    var categoryMax = categories.length ? categories[0].amount : 0;
+    var categoryHtml = categories.length ? categories.map(function (item) {
+      return '<div class="category-stat-row"><div class="rank-row-head"><span>' + escapeHtml(item.name) +
+        ' <small>' + item.count + ' 笔</small></span><span>' + fmt(item.amount) + ' <span class="pct">' +
+        pct(item.amount, spent) + '%</span></span></div><div class="rank-bar"><i style="width:' +
+        Math.max(4, pct(item.amount, categoryMax)) + '%"></i></div></div>';
+    }).join('') : '<div class="dash-empty">本周期暂无分类数据</div>';
+    html += '<section class="dash-section category-section" id="categorySection">' +
+      '<div class="dash-title">分类开支 <span class="dash-sub">标准分类</span></div>' + categoryHtml + '</section>';
 
     var ranked = [];
     for (var i = 0; i < m.expenses.length; i++) {
@@ -1469,7 +1767,7 @@
           }
         }
       }
-      ranked.push({ expenseId: ex.id, name: ex.name, paid: paid, segments: segs });
+      ranked.push({ expenseId: ex.id, name: ex.name, category: categoryName(ex.categoryId), paid: paid, segments: segs });
     }
     ranked.sort(function (a, b) { return b.paid - a.paid; });
     var maxPaid = ranked.length ? ranked[0].paid : 0;
@@ -1503,9 +1801,8 @@
       rankHtml = '<div class="dash-empty">本月暂无开支记录</div>';
     }
     html += '<section class="dash-section">' +
-      '<div class="dash-title">本月开支占比</div>' + rankHtml + '</section>';
+      '<div class="dash-title">开支明细排行</div>' + rankHtml + '</section>';
 
-    var planned = sum(m.expenses, 'plannedAmount');
     var aiContext = aiTrendContext(state.current);
     var nextCycle = monthKey(new Date(state.current.getFullYear(), state.current.getMonth() + 1, 1));
     var ov = {
@@ -1513,6 +1810,9 @@
       budget: budget, balance: balance, ranked: ranked,
       remainingDays: forecast.remainingDays, forecast: forecast.forecast,
       trends: aiContext.trends, recurring: aiContext.recurring,
+      categories: categories.map(function (item) { return { name: item.name, amount: item.amount, count: item.count }; }),
+      members: members.map(function (item) { return { name: item.name, amount: item.amount, count: item.count }; }),
+      localAnomalies: localAnomalies(actionInsights),
       nextMonthKey: nextCycle
     };
     html += aiCardHtml(ov, key);
@@ -1579,6 +1879,30 @@
 
     view.innerHTML = html;
 
+    var metricTriggers = view.querySelectorAll('[data-metric-key]');
+    for (var mi = 0; mi < metricTriggers.length; mi++) {
+      metricTriggers[mi].addEventListener('click', function () {
+        openMetricDetail(this.getAttribute('data-metric-key'));
+      });
+      metricTriggers[mi].addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openMetricDetail(this.getAttribute('data-metric-key'));
+        }
+      });
+    }
+    var insightButtons = view.querySelectorAll('.action-insight[data-target]');
+    for (var ii = 0; ii < insightButtons.length; ii++) {
+      insightButtons[ii].addEventListener('click', function () {
+        var target = this.getAttribute('data-target');
+        if (target === 'plan') {
+          setTab('plan');
+        } else if (target === 'category') {
+          var section = $('categorySection');
+          if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    }
     var genBtn = view.querySelector('#aiGenBtn');
     if (genBtn) genBtn.addEventListener('click', function () { genAdviceH5(aiState.state === 'error', ov, key); });
     var regenBtn = view.querySelector('#aiRegen');
@@ -1611,7 +1935,9 @@
   /* ---------- 渲染 ---------- */
   function render() {
     var key = monthKey(state.current);
+    var carried = ensureFixedPlansForKey(key);
     var m = getMonth(key);
+    if (carried) save();
     $('monthLabel').textContent = cycleRangeText(state.current);
 
     var incomeT = sum(m.income, 'amount');
@@ -1622,6 +1948,13 @@
     var budgetOut = savingT + plannedT;
     var actualSpent = calcActualSpent(m);
     var remain = budget - budgetOut;
+    var currentForecast = cycleMetrics(state.current, actualSpent, budget, m.expenses);
+    state.metricContext = {
+      income: incomeT, saving: savingT, spent: expenseDone, planned: plannedT,
+      budget: budget, actualSpent: actualSpent,
+      execPct: budget > 0 ? Math.min(100, Math.round((actualSpent / budget) * 100)) : 0,
+      forecast: currentForecast
+    };
 
     $('budgetValue').textContent = budget ? fmt(budget) : '¥0';
     $('budgetOutValue').textContent = fmt(budgetOut);
@@ -1697,7 +2030,8 @@
       var meta = document.createElement('div');
       meta.className = 'row-meta';
       var statusText = status === 'done' ? ' · 已完成' : (status === 'partial' ? ' · 部分支出' : ' · 待支出');
-      meta.textContent = (item.date || '') + statusText;
+      meta.textContent = (item.date || '') + ' · ' + categoryName(item.categoryId) +
+        (item.isFixed ? ' · 固定' : '') + statusText;
       main.appendChild(name);
       main.appendChild(meta);
       var notesText = paymentNotesSummary(item);
@@ -1781,6 +2115,7 @@
       item.payments.push({
         id: uid(), amount: remainder, date: todayISO(), note: '完成计划',
         recordedAt: nowISO(), updatedAt: nowISO(),
+        categoryId: normalizeCategoryId(item.categoryId),
         memberId: member.memberId, memberName: member.memberName
       });
     }
@@ -1891,18 +2226,25 @@
 
   function quickSuggestions() {
     var map = {};
+    function remember(name, amount, categoryId, at) {
+      name = (name || '').trim();
+      if (!name) return;
+      if (!map[name]) map[name] = { name: name, count: 0, lastAt: '', planId: '', lastAmount: 0, categoryId: 'other' };
+      map[name].count += 1;
+      if ((at || '') >= map[name].lastAt) {
+        map[name].lastAt = at || '';
+        map[name].lastAmount = num(amount);
+        map[name].categoryId = normalizeCategoryId(categoryId);
+      }
+    }
     Object.keys(state.data.months || {}).forEach(function (key) {
       var expenses = (state.data.months[key] && state.data.months[key].expenses) || [];
       expenses.forEach(function (expense) {
-        var names = [expense.name];
-        (expense.payments || []).forEach(function (payment) { names.push(payment.note); });
-        names.forEach(function (name) {
-          name = (name || '').trim();
-          if (!name) return;
-          if (!map[name]) map[name] = { name: name, count: 0, lastAt: '', planId: '' };
-          map[name].count += 1;
-          var at = recordTime(expense);
-          if (at >= map[name].lastAt) map[name].lastAt = at;
+        if (!(expense.payments || []).length) {
+          remember(expense.name, expensePaid(expense), expense.categoryId, recordTime(expense));
+        }
+        (expense.payments || []).forEach(function (payment) {
+          remember(payment.note || expense.name, payment.amount, payment.categoryId || expense.categoryId, recordTime(payment));
         });
       });
     });
@@ -1934,6 +2276,10 @@
     }).join('');
     if (profile) $('fQuickMember').value = profile.memberId;
     $('quickMemberPill').textContent = profile ? profile.name + ' 的设备' : '';
+    $('quickCategoryChips').innerHTML = EXPENSE_CATEGORIES.map(function (item) {
+      return '<button type="button" class="category-chip' + (item.id === 'other' ? ' active' : '') +
+        '" data-category-id="' + item.id + '">' + item.name + '</button>';
+    }).join('');
 
     var key = monthKey(state.current);
     var plans = getMonth(key).expenses.filter(function (item) { return item.source !== 'quick'; });
@@ -1948,7 +2294,8 @@
     $('quickChips').innerHTML = chips.length
       ? '<span class="quick-chips-label">常用</span>' + chips.map(function (item) {
           return '<button type="button" class="quick-chip" data-note="' + escapeHtml(item.name) +
-            '" data-plan-id="' + escapeHtml(item.planId) + '">' + escapeHtml(item.name) + '</button>';
+            '" data-plan-id="' + escapeHtml(item.planId) + '" data-amount="' + item.lastAmount +
+            '" data-category-id="' + item.categoryId + '">' + escapeHtml(item.name) + '</button>';
         }).join('')
       : '';
   }
@@ -1962,6 +2309,8 @@
     $('fQuickNote').value = '';
     $('fQuickDate').value = todayISO();
     $('fQuickPlan').value = '';
+    $('fQuickCategory').value = 'other';
+    if ($('quickMore')) $('quickMore').open = false;
     showDrawer('quickEntryDrawer', 'quickEntryMask');
     setTimeout(function () { $('fQuickAmount').focus(); }, 220);
   }
@@ -1978,11 +2327,8 @@
       $('fQuickAmount').focus();
       return;
     }
-    if (!note) {
-      showToast('请输入支出备注');
-      $('fQuickNote').focus();
-      return;
-    }
+    var categoryId = normalizeCategoryId($('fQuickCategory').value);
+    if (!note) note = categoryName(categoryId);
     var key = monthKey(state.current);
     var month = getMonth(key);
     var memberId = $('fQuickMember').value;
@@ -1994,6 +2340,7 @@
       date: $('fQuickDate').value || todayISO(),
       recordedAt: nowISO(),
       updatedAt: nowISO(),
+      categoryId: categoryId,
       memberId: memberId,
       memberName: member.name || '未标注'
     };
@@ -2015,6 +2362,7 @@
       expense = {
         id: uid(),
         name: note,
+        categoryId: categoryId,
         plannedAmount: amount,
         date: payment.date,
         source: 'quick',
@@ -2212,7 +2560,8 @@
       amount: amt,
       date: $('fPayDate').value || todayISO(),
       recordedAt: nowISO(),
-      updatedAt: nowISO()
+      updatedAt: nowISO(),
+      categoryId: normalizeCategoryId(item.categoryId)
     };
     var memberFields = currentMemberFields();
     pay.memberId = memberFields.memberId;
@@ -2247,7 +2596,9 @@
     $('fDate').value = item ? (item.date || todayISO()) : todayISO();
 
     if (isExpense) {
+      $('fCategory').innerHTML = categoryOptions(item && item.categoryId);
       $('fPlanned').value = item ? item.plannedAmount : '';
+      $('fIsFixed').checked = !!(item && item.isFixed);
       syncExpenseSummary(item);
     } else {
       $('fAmount').value = item ? item.amount : '';
@@ -2270,6 +2621,8 @@
     if (ed.type === 'expenses') {
       var planned = num($('fPlanned').value);
       var paymentAmt = num($('fPayment').value);
+      var categoryId = normalizeCategoryId($('fCategory').value);
+      var isFixed = !!$('fIsFixed').checked;
       if (paymentAmt > 0 && !getMemberProfile()) {
         ensureMember(function () { $('entryForm').requestSubmit(); });
         return;
@@ -2278,12 +2631,20 @@
         item.name = name;
         item.date = date;
         item.plannedAmount = planned;
+        item.categoryId = categoryId;
+        item.isFixed = isFixed;
+        if (isFixed && !item.fixedSeriesId) item.fixedSeriesId = 'fixed_' + item.id;
+        if (!isFixed) {
+          delete item.fixedSeriesId;
+          delete item.carriedFromId;
+        }
         ensurePayments(item);
         if (paymentAmt > 0) {
           var member = currentMemberFields();
           item.payments.push({
             id: uid(), amount: paymentAmt, date: date,
             recordedAt: nowISO(), updatedAt: nowISO(),
+            categoryId: categoryId,
             memberId: member.memberId, memberName: member.memberName
           });
         }
@@ -2294,18 +2655,22 @@
         var newItem = {
           id: uid(),
           name: name,
+          categoryId: categoryId,
           plannedAmount: planned,
           date: date,
+          isFixed: isFixed,
           payments: [],
           done: false,
           actualAmount: '',
           updatedAt: nowISO()
         };
+        if (isFixed) newItem.fixedSeriesId = 'fixed_' + newItem.id;
         if (paymentAmt > 0) {
           var newMember = currentMemberFields();
           newItem.payments.push({
             id: uid(), amount: paymentAmt, date: date,
             recordedAt: nowISO(), updatedAt: nowISO(),
+            categoryId: categoryId,
             memberId: newMember.memberId, memberName: newMember.memberName
           });
         }
@@ -2427,13 +2792,44 @@
       var chip = e.target.closest('.quick-chip');
       if (!chip) return;
       $('fQuickNote').value = chip.getAttribute('data-note') || '';
+      var amount = num(chip.getAttribute('data-amount'));
+      if (amount > 0) $('fQuickAmount').value = amount;
+      var categoryId = normalizeCategoryId(chip.getAttribute('data-category-id'));
+      $('fQuickCategory').value = categoryId;
+      document.querySelectorAll('#quickCategoryChips .category-chip').forEach(function (item) {
+        item.classList.toggle('active', item.getAttribute('data-category-id') === categoryId);
+      });
       var planId = chip.getAttribute('data-plan-id') || '';
       if (planId) $('fQuickPlan').value = planId;
       $('fQuickAmount').focus();
     });
+    $('quickCategoryChips').addEventListener('click', function (e) {
+      var chip = e.target.closest('.category-chip');
+      if (!chip) return;
+      var categoryId = normalizeCategoryId(chip.getAttribute('data-category-id'));
+      $('fQuickCategory').value = categoryId;
+      this.querySelectorAll('.category-chip').forEach(function (item) {
+        item.classList.toggle('active', item === chip);
+      });
+    });
+    $('fQuickPlan').addEventListener('change', function () {
+      var plan = this.value ? findItem('expenses', this.value) : null;
+      if (!plan) return;
+      var categoryId = normalizeCategoryId(plan.categoryId);
+      $('fQuickCategory').value = categoryId;
+      document.querySelectorAll('#quickCategoryChips .category-chip').forEach(function (item) {
+        item.classList.toggle('active', item.getAttribute('data-category-id') === categoryId);
+      });
+      if (!$('fQuickNote').value) $('fQuickNote').value = plan.name || '';
+    });
 
     $('expenseDetailCloseBtn').addEventListener('click', closeExpenseDetailDrawer);
     $('expenseDetailMask').addEventListener('click', closeExpenseDetailDrawer);
+    $('metricDetailCloseBtn').addEventListener('click', closeMetricDetail);
+    $('metricDetailMask').addEventListener('click', closeMetricDetail);
+    document.querySelectorAll('.metric-summary[data-metric-key]').forEach(function (item) {
+      item.addEventListener('click', function () { openMetricDetail(item.getAttribute('data-metric-key')); });
+    });
 
     $('syncRetryBtn').addEventListener('click', retrySync);
     $('memberBookBtn').addEventListener('click', function () { openMemberDrawer(false); });
