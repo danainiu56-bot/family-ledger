@@ -124,6 +124,14 @@
         </div>
         <ul class="list" id="expenseList"></ul>
       </section>
+
+      <button type="button" class="voice-plan-entry" id="voicePlanBtn">
+        <span class="voice-plan-entry-icon" aria-hidden="true">&#127908;</span>
+        <span>
+          <strong>语音创建计划</strong>
+          <small>一句话可同时添加多条</small>
+        </span>
+      </button>
     </main>
 
     <main class="content dash-view" id="dashView" hidden></main>
@@ -377,6 +385,50 @@
     <div class="drawer-actions">
       <button type="button" class="btn btn-cancel" id="metricDetailCloseBtn">知道了</button>
       <button type="button" class="btn btn-primary" id="metricDetailActionBtn" hidden>查看详情</button>
+    </div>
+  </div>
+
+  <div class="drawer-mask" id="voicePlanMask" hidden></div>
+  <div class="drawer voice-plan-drawer" id="voicePlanDrawer" hidden>
+    <div class="drawer-handle"></div>
+    <div class="voice-plan-title-row">
+      <div>
+        <h3 class="drawer-title">语音创建计划</h3>
+        <p class="drawer-desc">为 <b id="voicePlanMonth">—</b> 创建，识别后确认才会保存。</p>
+      </div>
+      <button type="button" class="voice-plan-close" id="voicePlanCloseBtn" aria-label="关闭">&#10005;</button>
+    </div>
+
+    <div id="voiceCapturePanel">
+      <button type="button" class="voice-record-btn" id="voiceRecordBtn">
+        <span class="voice-record-icon" aria-hidden="true">&#127908;</span>
+        <span id="voiceRecordLabel">点击开始说话</span>
+      </button>
+      <p class="voice-status" id="voiceStatus" aria-live="polite">最长 30 秒，可说多条收入、储蓄或开支计划</p>
+
+      <div class="voice-text-fallback">
+        <div class="voice-divider"><span>或输入一句话</span></div>
+        <label class="field">
+          <textarea id="voicePlanText" maxlength="300" rows="3" placeholder="例如：7月25日房租2200，水电费500，本月存5000元"></textarea>
+        </label>
+        <button type="button" class="btn btn-cancel" id="voiceTextParseBtn">解析文字</button>
+      </div>
+    </div>
+
+    <div id="voicePreviewPanel" hidden>
+      <div class="voice-preview-head">
+        <div>
+          <strong>确认计划草稿</strong>
+          <small id="voiceTranscript"></small>
+        </div>
+        <button type="button" class="voice-retry-btn" id="voiceRetryBtn">重新识别</button>
+      </div>
+      <div class="voice-plan-list" id="voicePlanList"></div>
+      <p class="voice-preview-error" id="voicePreviewError" hidden></p>
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-cancel" id="voicePreviewCancelBtn">取消</button>
+        <button type="button" class="btn btn-primary" id="voiceConfirmBtn" disabled>确认创建</button>
+      </div>
     </div>
   </div>
 

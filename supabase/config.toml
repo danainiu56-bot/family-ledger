@@ -1,0 +1,2 @@
+[functions.voice-plan]
+verify_jwt = false

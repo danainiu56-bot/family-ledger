@@ -570,6 +570,170 @@ button:disabled { cursor: not-allowed; opacity: .48; box-shadow: none; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
+/* ---------- 语音批量创建计划 ---------- */
+.voice-plan-entry {
+  width: 100%;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border: 1.5px solid #c7d2fe;
+  border-radius: var(--radius);
+  background: #eef2ff;
+  color: var(--primary-dark);
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+.voice-plan-entry:active { background: #e0e7ff; }
+.voice-plan-entry-icon { font-size: 24px; }
+.voice-plan-entry strong { display: block; font-size: 16px; }
+.voice-plan-entry small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.voice-plan-drawer {
+  max-height: 88vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.voice-plan-title-row,
+.voice-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.voice-plan-title-row .drawer-title { margin-bottom: 8px; }
+.voice-plan-close {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 16px;
+}
+.voice-record-btn {
+  width: 132px;
+  height: 132px;
+  margin: 20px auto 12px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, var(--primary), var(--primary-dark));
+  color: #fff;
+  box-shadow: 0 10px 28px rgba(37,99,235,.28);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.voice-record-btn.recording {
+  background: var(--danger);
+  animation: voicePulse 1.4s infinite;
+}
+.voice-record-btn:disabled { opacity: .55; box-shadow: none; }
+.voice-record-icon { font-size: 30px; line-height: 1; }
+.voice-status {
+  min-height: 22px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.voice-status.error { color: var(--danger); }
+.voice-status.busy { color: var(--primary-dark); }
+.voice-text-fallback { margin-top: 18px; }
+.voice-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--text-light);
+  font-size: 12px;
+}
+.voice-divider::before,
+.voice-divider::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
+.voice-text-fallback .btn { width: 100%; margin-top: 10px; }
+.voice-preview-head { margin: 4px 0 14px; }
+.voice-preview-head strong { display: block; font-size: 16px; }
+.voice-preview-head small {
+  display: block;
+  max-width: 390px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.voice-retry-btn,
+.voice-plan-remove {
+  flex-shrink: 0;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.voice-plan-list { display: flex; flex-direction: column; gap: 10px; }
+.voice-plan-card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+}
+.voice-plan-card.has-error { border-color: #fca5a5; background: #fffafa; }
+.voice-plan-card-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.voice-plan-fields {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 9px;
+}
+.voice-plan-field { display: flex; flex-direction: column; gap: 4px; }
+.voice-plan-field label { color: var(--text-muted); font-size: 11px; }
+.voice-plan-field input,
+.voice-plan-field select {
+  width: 100%;
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
+.voice-plan-field.needs-review input,
+.voice-plan-field.needs-review select { border-color: var(--danger); background: #fef2f2; }
+.voice-plan-card-error {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 11px;
+}
+.voice-preview-error {
+  margin-top: 10px;
+  color: var(--danger);
+  font-size: 12px;
+}
+#voiceConfirmBtn:disabled { opacity: .5; }
+
+@keyframes voicePulse {
+  50% { transform: scale(.97); box-shadow: 0 6px 18px rgba(239,68,68,.3); }
+}
+
 /* ---------- 底部 Tab ---------- */
 .tabbar {
   position: fixed;

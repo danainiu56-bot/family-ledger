@@ -878,7 +878,18 @@
     actionDetailTarget: '',
     localDirty: false,
     saveRevision: 0,
-    lastConflictNotice: 0
+    lastConflictNotice: 0,
+    voice: {
+      recorder: null,
+      stream: null,
+      chunks: [],
+      startedAt: 0,
+      timer: null,
+      cycleKey: '',
+      drafts: [],
+      busy: false,
+      cancelled: false
+    }
   };
 
   /* ---------- 计算 ---------- */
@@ -2781,6 +2792,374 @@
     closeDrawers();
   }
 
+  /* ---------- 语音批量创建计划 ---------- */
+  function setVoiceStatus(message, kind) {
+    var el = $('voiceStatus');
+    el.textContent = message;
+    el.className = 'voice-status' + (kind ? ' ' + kind : '');
+  }
+
+  function voiceFunctionUrl() {
+    var c = getConfig();
+    return (c.supabaseUrl || '').replace(/\/$/, '') + '/functions/v1/voice-plan';
+  }
+
+  function voiceCycleBounds(key) {
+    var parts = key.split('-');
+    var start = new Date(Number(parts[0]), Number(parts[1]) - 1, CYCLE_START_DAY);
+    return { start: start, end: new Date(start.getFullYear(), start.getMonth() + 1, CYCLE_START_DAY) };
+  }
+
+  function validVoiceDate(value, key) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false;
+    var parts = value.split('-').map(Number);
+    var date = new Date(parts[0], parts[1] - 1, parts[2]);
+    if (date.getFullYear() !== parts[0] || date.getMonth() !== parts[1] - 1 || date.getDate() !== parts[2]) {
+      return false;
+    }
+    var bounds = voiceCycleBounds(key);
+    return date >= bounds.start && date < bounds.end;
+  }
+
+  function voiceDefaultDate(key) {
+    var today = todayISO();
+    if (validVoiceDate(today, key)) return today;
+    var start = voiceCycleBounds(key).start;
+    return start.getFullYear() + '-' + pad2(start.getMonth() + 1) + '-' + pad2(start.getDate());
+  }
+
+  function stopVoiceTracks() {
+    if (state.voice.stream) {
+      state.voice.stream.getTracks().forEach(function (track) { track.stop(); });
+    }
+    state.voice.stream = null;
+  }
+
+  function clearVoiceTimer() {
+    if (state.voice.timer) clearInterval(state.voice.timer);
+    state.voice.timer = null;
+  }
+
+  function setVoiceBusy(busy) {
+    state.voice.busy = busy;
+    $('voiceRecordBtn').disabled = busy || !navigator.mediaDevices || !window.MediaRecorder;
+    $('voiceTextParseBtn').disabled = busy;
+    $('voicePlanText').disabled = busy;
+  }
+
+  function resetVoiceCapture() {
+    state.voice.drafts = [];
+    state.voice.cancelled = false;
+    $('voiceCapturePanel').hidden = false;
+    $('voicePreviewPanel').hidden = true;
+    $('voicePlanList').innerHTML = '';
+    $('voicePreviewError').hidden = true;
+    $('voiceRecordBtn').classList.remove('recording');
+    $('voiceRecordLabel').textContent = '点击开始说话';
+    setVoiceBusy(false);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      $('voiceRecordBtn').disabled = true;
+      setVoiceStatus('当前环境不支持网页录音，请使用下方文字解析', 'error');
+    } else {
+      setVoiceStatus('最长 30 秒，可说多条收入、储蓄或开支计划', '');
+    }
+  }
+
+  function openVoicePlan() {
+    if (!cloudEnabled()) {
+      showToast('请先配置 Supabase，才能使用语音识别');
+      return;
+    }
+    state.voice.cycleKey = monthKey(state.current);
+    $('voicePlanMonth').textContent = cycleRangeText(state.current) + ' 周期';
+    $('voicePlanText').value = '';
+    resetVoiceCapture();
+    showDrawer('voicePlanDrawer', 'voicePlanMask');
+  }
+
+  function closeVoicePlan() {
+    state.voice.cancelled = true;
+    clearVoiceTimer();
+    if (state.voice.recorder && state.voice.recorder.state === 'recording') {
+      state.voice.recorder.stop();
+    }
+    stopVoiceTracks();
+    state.voice.recorder = null;
+    state.voice.chunks = [];
+    state.voice.busy = false;
+    $('voicePlanMask').hidden = true;
+    $('voicePlanDrawer').hidden = true;
+  }
+
+  function supportedAudioType() {
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    var types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
+    for (var i = 0; i < types.length; i++) {
+      if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+    }
+    return '';
+  }
+
+  function requestVoicePlans(blob, durationMs, text) {
+    var c = getConfig();
+    var headers = {
+      apikey: c.supabaseAnonKey,
+      Authorization: 'Bearer ' + c.supabaseAnonKey
+    };
+    var body;
+    if (blob) {
+      body = new FormData();
+      var ext = blob.type.indexOf('mp4') !== -1 ? 'm4a' : 'webm';
+      body.append('audio', blob, 'voice-plan.' + ext);
+      body.append('durationMs', String(durationMs || 0));
+      body.append('currentCycle', state.voice.cycleKey);
+      body.append('timezone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai');
+      body.append('bookId', state.bookId || '');
+    } else {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({
+        text: text,
+        currentCycle: state.voice.cycleKey,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai',
+        bookId: state.bookId || ''
+      });
+    }
+    return fetch(voiceFunctionUrl(), { method: 'POST', headers: headers, body: body })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(data.error || ('识别服务暂时不可用（' + res.status + '）'));
+          return data;
+        });
+      });
+  }
+
+  function normalizeVoiceDraft(plan) {
+    plan = plan || {};
+    var allowed = ['income', 'savings', 'expenses'];
+    var review = Array.isArray(plan.reviewFields) ? plan.reviewFields.slice() : [];
+    var type = allowed.indexOf(plan.type) !== -1 ? plan.type : 'expenses';
+    var amount = Number(plan.amount);
+    var date = String(plan.date || '');
+    if (allowed.indexOf(plan.type) === -1) review.push('type');
+    if (!isFinite(amount) || amount <= 0) { amount = 0; review.push('amount'); }
+    if (!validVoiceDate(date, state.voice.cycleKey)) {
+      date = voiceDefaultDate(state.voice.cycleKey);
+      review.push('date');
+    }
+    var name = String(plan.name || '').trim().slice(0, 20);
+    if (!name) review.push('name');
+    return {
+      type: type,
+      name: name,
+      amount: amount,
+      date: date,
+      reviewFields: review.filter(function (field, index, all) {
+        return ['type', 'name', 'amount', 'date'].indexOf(field) !== -1 &&
+          all.indexOf(field) === index;
+      })
+    };
+  }
+
+  function voiceFieldInvalid(draft, field) {
+    if (draft.reviewFields.indexOf(field) !== -1) return true;
+    if (field === 'type') return ['income', 'savings', 'expenses'].indexOf(draft.type) === -1;
+    if (field === 'name') return !draft.name || draft.name.length > 20;
+    if (field === 'amount') return !isFinite(Number(draft.amount)) || Number(draft.amount) <= 0;
+    if (field === 'date') return !validVoiceDate(draft.date, state.voice.cycleKey);
+    return false;
+  }
+
+  function voiceDraftIssues(draft) {
+    var messages = [];
+    if (voiceFieldInvalid(draft, 'type')) messages.push('计划类型');
+    if (voiceFieldInvalid(draft, 'name')) messages.push('名称');
+    if (voiceFieldInvalid(draft, 'amount')) messages.push('金额');
+    if (voiceFieldInvalid(draft, 'date')) messages.push('日期');
+    return messages;
+  }
+
+  function refreshVoiceDraftValidation() {
+    var allValid = state.voice.drafts.length > 0;
+    document.querySelectorAll('.voice-plan-card').forEach(function (card, index) {
+      var draft = state.voice.drafts[index];
+      var issues = voiceDraftIssues(draft);
+      card.classList.toggle('has-error', issues.length > 0);
+      card.querySelectorAll('[data-voice-field]').forEach(function (wrap) {
+        wrap.classList.toggle('needs-review', voiceFieldInvalid(draft, wrap.dataset.voiceField));
+      });
+      var error = card.querySelector('.voice-plan-card-error');
+      error.textContent = issues.length ? '请核对：' + issues.join('、') : '';
+      error.hidden = !issues.length;
+      if (issues.length) allValid = false;
+    });
+    $('voiceConfirmBtn').disabled = !allValid;
+    $('voiceConfirmBtn').textContent = '确认创建 ' + state.voice.drafts.length + ' 条';
+  }
+
+  function clearVoiceReviewField(draft, field) {
+    draft.reviewFields = draft.reviewFields.filter(function (item) { return item !== field; });
+  }
+
+  function renderVoiceDrafts() {
+    var list = $('voicePlanList');
+    list.innerHTML = '';
+    state.voice.drafts.forEach(function (draft, index) {
+      var card = document.createElement('div');
+      card.className = 'voice-plan-card';
+      card.innerHTML =
+        '<div class="voice-plan-card-head"><span>计划 ' + (index + 1) + '</span>' +
+        '<button type="button" class="voice-plan-remove">删除</button></div>' +
+        '<div class="voice-plan-fields">' +
+        '<div class="voice-plan-field" data-voice-field="type"><label>类型</label>' +
+        '<select><option value="income">收入</option><option value="savings">储蓄</option><option value="expenses">开支</option></select></div>' +
+        '<div class="voice-plan-field" data-voice-field="name"><label>名称</label><input type="text" maxlength="20"></div>' +
+        '<div class="voice-plan-field" data-voice-field="amount"><label>金额</label><input type="number" min="0.01" step="0.01" inputmode="decimal"></div>' +
+        '<div class="voice-plan-field" data-voice-field="date"><label>日期</label><input type="date"></div>' +
+        '</div><p class="voice-plan-card-error" hidden></p>';
+      var fields = card.querySelectorAll('select, input');
+      fields[0].value = draft.type;
+      fields[1].value = draft.name;
+      fields[2].value = draft.amount || '';
+      fields[3].value = draft.date;
+      ['type', 'name', 'amount', 'date'].forEach(function (field, fieldIndex) {
+        fields[fieldIndex].addEventListener('input', function () {
+          draft[field] = field === 'amount' ? Number(this.value) : this.value.trim();
+          clearVoiceReviewField(draft, field);
+          refreshVoiceDraftValidation();
+        });
+      });
+      card.querySelector('.voice-plan-remove').addEventListener('click', function () {
+        state.voice.drafts.splice(index, 1);
+        renderVoiceDrafts();
+      });
+      list.appendChild(card);
+    });
+    refreshVoiceDraftValidation();
+  }
+
+  function parseVoiceInput(blob, durationMs, text) {
+    if (state.voice.busy) return;
+    setVoiceBusy(true);
+    setVoiceStatus(blob ? '正在识别并拆分计划…' : '正在解析计划…', 'busy');
+    requestVoicePlans(blob, durationMs, text).then(function (result) {
+      var plans = Array.isArray(result.plans) ? result.plans.slice(0, 10) : [];
+      if (!plans.length) throw new Error('没有识别到可创建的计划，请换一种说法');
+      state.voice.drafts = plans.map(normalizeVoiceDraft);
+      $('voiceTranscript').textContent = result.transcript ? '识别内容：' + result.transcript : '';
+      $('voiceCapturePanel').hidden = true;
+      $('voicePreviewPanel').hidden = false;
+      renderVoiceDrafts();
+    }).catch(function (err) {
+      setVoiceStatus(err && err.message ? err.message : '识别失败，请稍后重试', 'error');
+    }).finally(function () {
+      setVoiceBusy(false);
+    });
+  }
+
+  function stopVoiceRecording() {
+    if (state.voice.recorder && state.voice.recorder.state === 'recording') state.voice.recorder.stop();
+  }
+
+  function startVoiceRecording() {
+    if (state.voice.busy || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia ||
+        !window.MediaRecorder) return;
+    state.voice.cancelled = false;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      state.voice.stream = stream;
+      state.voice.chunks = [];
+      var mimeType = supportedAudioType();
+      state.voice.recorder = mimeType ?
+        new MediaRecorder(stream, { mimeType: mimeType }) :
+        new MediaRecorder(stream);
+      var recorder = state.voice.recorder;
+      recorder.addEventListener('dataavailable', function (event) {
+        if (event.data && event.data.size) state.voice.chunks.push(event.data);
+      });
+      recorder.addEventListener('stop', function () {
+        var duration = Date.now() - state.voice.startedAt;
+        var type = recorder.mimeType || mimeType || 'audio/webm';
+        var blob = new Blob(state.voice.chunks, { type: type });
+        clearVoiceTimer();
+        stopVoiceTracks();
+        state.voice.recorder = null;
+        $('voiceRecordBtn').classList.remove('recording');
+        $('voiceRecordLabel').textContent = '点击开始说话';
+        if (!state.voice.cancelled && blob.size) parseVoiceInput(blob, duration, '');
+      });
+      state.voice.startedAt = Date.now();
+      recorder.start(250);
+      $('voiceRecordBtn').classList.add('recording');
+      $('voiceRecordLabel').textContent = '再次点击结束';
+      setVoiceStatus('录音中 0 秒', '');
+      state.voice.timer = setInterval(function () {
+        var elapsed = Date.now() - state.voice.startedAt;
+        setVoiceStatus('录音中 ' + Math.ceil(elapsed / 1000) + ' 秒', '');
+        if (elapsed >= 30000) stopVoiceRecording();
+      }, 250);
+    }).catch(function () {
+      setVoiceStatus('无法使用麦克风，请允许权限或改用文字解析', 'error');
+    });
+  }
+
+  function toggleVoiceRecording() {
+    if (state.voice.recorder && state.voice.recorder.state === 'recording') stopVoiceRecording();
+    else startVoiceRecording();
+  }
+
+  function parseVoiceText() {
+    var text = $('voicePlanText').value.trim();
+    if (!text) {
+      setVoiceStatus('请先输入要创建的计划', 'error');
+      $('voicePlanText').focus();
+      return;
+    }
+    parseVoiceInput(null, 0, text);
+  }
+
+  function confirmVoicePlans() {
+    var hasError = state.voice.drafts.some(function (draft) {
+      return voiceDraftIssues(draft).length > 0;
+    });
+    if (hasError || !state.voice.drafts.length) {
+      $('voicePreviewError').textContent = '请先核对所有红色字段';
+      $('voicePreviewError').hidden = false;
+      return;
+    }
+    var key = state.voice.cycleKey;
+    var month = getMonth(key);
+    var drafts = state.voice.drafts.slice();
+    state.voice.drafts = [];
+    drafts.forEach(function (draft) {
+      if (draft.type === 'expenses') {
+        month.expenses.push({
+          id: uid(),
+          name: draft.name.trim(),
+          categoryId: 'other',
+          plannedAmount: num(draft.amount),
+          actualAmount: '',
+          payments: [],
+          done: false,
+          isFixed: false,
+          date: draft.date,
+          updatedAt: nowISO()
+        });
+      } else {
+        month[draft.type].push({
+          id: uid(),
+          name: draft.name.trim(),
+          amount: num(draft.amount),
+          date: draft.date,
+          updatedAt: nowISO()
+        });
+      }
+    });
+    if (drafts.some(function (draft) { return draft.type === 'income'; })) syncBudgetFromIncome(key);
+    save();
+    render();
+    closeVoicePlan();
+    showToast('已创建 ' + drafts.length + ' 条计划');
+  }
+
   /* ---------- 抽屉显隐 ---------- */
   function showDrawer(drawerId, maskId) {
     $(maskId).hidden = false;
@@ -2910,6 +3289,14 @@
       joinBook($('fBookId').value);
     });
     $('bookMask').addEventListener('click', closeBookSetup);
+    $('voicePlanBtn').addEventListener('click', openVoicePlan);
+    $('voicePlanCloseBtn').addEventListener('click', closeVoicePlan);
+    $('voicePlanMask').addEventListener('click', closeVoicePlan);
+    $('voiceRecordBtn').addEventListener('click', toggleVoiceRecording);
+    $('voiceTextParseBtn').addEventListener('click', parseVoiceText);
+    $('voiceRetryBtn').addEventListener('click', resetVoiceCapture);
+    $('voicePreviewCancelBtn').addEventListener('click', closeVoicePlan);
+    $('voiceConfirmBtn').addEventListener('click', confirmVoicePlans);
 
     document.querySelectorAll('.tab-item').forEach(function (btn) {
       btn.addEventListener('click', function () {
